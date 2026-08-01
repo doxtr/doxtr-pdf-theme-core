@@ -1,0 +1,30 @@
+<# Default highlights style template — a tcolorbox with a colored left border bar,
+   bold title text, and light yellow background. Replaces Sphinx's default quote
+   indentation for the `.. highlights::` directive with a fully styled box.
+#>
+
+\definecolor{ddhighlightstitlefg}{cmyk}{<< h_conf.title_font_color_cmyk >>}
+\definecolor{ddhighlightscontentbg}{cmyk}{<< h_conf.content_background_color_cmyk >>}
+\definecolor{ddhighlightscontentfg}{cmyk}{<< h_conf.content_font_color_cmyk >>}
+\definecolor{ddhighlightsborder}{cmyk}{<< h_conf.border_color_cmyk >>}
+
+\newtcolorbox{ddhighlightsbox}{
+    enhanced, breakable, parbox=false,
+    sharp corners,
+    before skip=<< h_conf.before_skip >>,
+    after skip=<< h_conf.after_skip >>,
+    colback=ddhighlightscontentbg,
+    coltext=ddhighlightscontentfg,
+    colframe=ddhighlightsborder,
+    fontupper=<% if h_conf.content_font %>\fontspec{<< h_conf.content_font >>}<% endif %><< h_conf.content_font_size >>,
+    boxrule=0pt,
+    leftrule=<< h_conf.border_width >>,
+    toprule=0pt, rightrule=0pt, bottomrule=0pt,
+    left=1em, right=1em, top=2.5em, bottom=1em,
+    overlay unbroken and first={
+        \node[anchor=north west, inner sep=0pt] at ([xshift=1em, yshift=-0.8em]frame.north west) {%
+            <% if h_conf.title_icon %>{\color{ddhighlightsborder}<< h_conf.title_icon >>\hspace{0.4em}}<% endif %>%
+            {<% if h_conf.title_font %>\fontspec{<< h_conf.title_font >>}<% endif %><< h_conf.title_font_size >>\color{ddhighlightstitlefg}<< h_conf.title_text >>}%
+        };
+    },
+}

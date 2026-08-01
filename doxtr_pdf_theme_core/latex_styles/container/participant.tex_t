@@ -1,0 +1,76 @@
+<# Participant container style
+   - Floating pill-shaped title box attached to configurable position (left/center/right)
+   - Title has rounded corners with gradient shading effect
+   - Clean content area with subtle background
+   - Configurable colors, fonts, frame, and title geometry
+   - title_position: 'left', 'center', 'right', or arbitrary LaTeX dimension
+#>
+\definecolor{ddparttitlefg<< c_name >>}{cmyk}{<< c_conf.title_color_cmyk >>}
+\definecolor{ddparttitletextfg<< c_name >>}{cmyk}{<< c_conf.title_font_color_cmyk >>}
+\definecolor{ddparticonfg<< c_name >>}{cmyk}{<< c_conf.title_icon_color_cmyk >>}
+\definecolor{ddpartcontentfg<< c_name >>}{cmyk}{<< c_conf.content_font_color_cmyk >>}
+\definecolor{ddpartcontentbg<< c_name >>}{cmyk}{<< c_conf.content_background_color_cmyk >>}
+
+<# Icon command for the title #>
+\expandafter\def\csname ddconticon<< c_name >>\endcsname{<% if c_conf.title_icon %>{<< c_conf.title_icon_font_size >>\color{ddparticonfg<< c_name >>}<< c_conf.title_icon >>}\hspace{0.5em}<% endif %>}
+
+<# Empty title style definition - participant style handles titles via attach boxed title #>
+\tcbset{ddcontainertitlestyle<< c_name >>/.style={}}
+
+\newtcolorbox{ddcontainer<< c_name >>}[1][]{enhanced, breakable, parbox=false,
+  before skip=<< c_conf.before_skip >>,
+  after skip=<< c_conf.after_skip >>,
+  colback=ddpartcontentbg<< c_name >>,
+  coltext=ddpartcontentfg<< c_name >>,
+  <% if c_conf.container_frame %>
+  colframe=ddparttitlefg<< c_name >>!50!black,
+  boxrule=<< c_conf.get('frame_width', '0.2mm') >>,
+  <% else %>
+  frame hidden,
+  boxrule=0pt,
+  <% endif %>
+  arc=<< c_conf.get('frame_arc', '0mm') >>,
+  boxsep=0.25em,
+  left=0.75em, right=0.75em, top=0.75em, bottom=0.5em,
+  fontupper=<% if c_conf.content_font %>\fontspec{<< c_conf.content_font >>}<% endif %><< c_conf.content_font_size >>,
+  <% if c_conf.match_text_width %>
+  grow to left by=\dimexpr 1em+<% if c_conf.container_frame %><< c_conf.get('frame_width', '0.2mm') >><% else %>0pt<% endif %>\relax,
+  grow to right by=\dimexpr 1em+<% if c_conf.container_frame %><< c_conf.get('frame_width', '0.2mm') >><% else %>0pt<% endif %>\relax,
+  <% endif %>
+  <# Title position: 'left', 'center', 'right', or arbitrary LaTeX dimension #>
+  <% set pos = c_conf.get('title_position', 'left') %>
+  <% set xshift = c_conf.get('title_xshift', '1cm') %>
+  <% if pos == 'left' %>
+  attach boxed title to top left={xshift=<< xshift >>, yshift*=1mm-\tcboxedtitleheight},
+  <% elif pos == 'center' %>
+  attach boxed title to top center={xshift=<< xshift >>, yshift*=1mm-\tcboxedtitleheight},
+  <% elif pos == 'right' %>
+  attach boxed title to top right={xshift=<< xshift >>, yshift*=1mm-\tcboxedtitleheight},
+  <% else %>
+  <# Arbitrary dimension: attach to left with the dimension as xshift #>
+  attach boxed title to top left={xshift=<< pos >>, yshift*=1mm-\tcboxedtitleheight},
+  <% endif %>
+  varwidth boxed title*=<< c_conf.get('title_max_width', '-3cm') >>,
+  boxed title style={
+    frame code={
+      <# Top arc shadow/depth effect #>
+      \path[fill=ddparttitlefg<< c_name >>!30!black]
+        ([yshift=-1mm,xshift=-1mm]frame.north west)
+        arc[start angle=0,end angle=180,radius=1mm]
+        ([yshift=-1mm,xshift=1mm]frame.north east)
+        arc[start angle=180,end angle=0,radius=1mm];
+      <# Main pill shape with gradient #>
+      \path[left color=ddparttitlefg<< c_name >>!60!black,
+            right color=ddparttitlefg<< c_name >>!60!black,
+            middle color=ddparttitlefg<< c_name >>!80!black]
+        ([xshift=-2mm]frame.north west) -- ([xshift=2mm]frame.north east)
+        [rounded corners=1mm]-- ([xshift=1mm,yshift=-1mm]frame.north east)
+        -- (frame.south east) -- (frame.south west)
+        -- ([xshift=-1mm,yshift=-1mm]frame.north west)
+        [sharp corners]-- cycle;
+    },
+    interior engine=empty,
+  },
+  fonttitle=<% if c_conf.title_font %>\fontspec{<< c_conf.title_font >>}<% endif %><< c_conf.title_font_size >>,
+  coltitle=ddparttitletextfg<< c_name >>,
+  #1}

@@ -1,0 +1,50 @@
+%% Remove the first horizontal rule (top line) from the title page
+\makeatletter
+<% if not doxtr_title_page_top_line %>
+\xpatchcmd{\sphinxmaketitle}{\rule{\textwidth}{1pt}}{}{}{}
+<% endif %>
+\makeatother
+
+<% if doxtr_title_page_color %>
+\definecolor{titlepagecolor}{cmyk}{<< doxtr_title_page_color >>}
+<% endif %>
+
+%% Define and apply the Title Page Background and Subtitle
+\makeatletter
+\let\orig@sphinxmaketitle\sphinxmaketitle
+\renewcommand{\sphinxmaketitle}{%
+  \begingroup
+  
+  % Forcefully suppress Sphinx's native latex_logo from rendering in the top right corner!
+  \def\sphinxlogo{}
+  
+  <% if doxtr_subtitle %>
+  % Scope the subtitle injection ONLY to the cover page so it doesn't break PDF metadata or KOMA headers!
+  \let\orig@titletext\@title
+  \def\@title{\orig@titletext\\[0.5em]{\usekomafont{subtitle}<< doxtr_subtitle >>}}
+  <% endif %>
+  
+  \let\orig@titlepage\titlepage
+  \def\titlepage{%
+    \orig@titlepage
+    <% if doxtr_title_page_background_image or doxtr_title_page_color %>
+    <% if doxtr_title_page_background_image %>
+    \begin{tikzpicture}[remember picture, overlay]
+      % Render Full Page Image
+      \node[inner sep=0pt, anchor=center] at (current page.center) {\includegraphics[width=\paperwidth,height=\paperheight]{<< doxtr_title_page_background_image >>}};
+      <% if doxtr_title_page_color %>
+      % Render Color Tint Overlay
+      \fill[titlepagecolor, opacity=<< doxtr_title_page_color_opacity >>] (current page.south west) rectangle (current page.north east);
+      <% endif %>
+    \end{tikzpicture}%
+    <% else %>
+    % No Image: Fall back to solid pagecolor
+    \pagecolor{titlepagecolor}%
+    \AddToHookNext{shipout/after}{\nopagecolor}%
+    <% endif %>
+    <% endif %>
+  }%
+  \orig@sphinxmaketitle
+  \endgroup
+}
+\makeatother

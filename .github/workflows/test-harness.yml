@@ -1,0 +1,82 @@
+name: Test Harness
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-harness:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - uses: actions/checkout@v6
+      
+      - name: Pull container image
+        run: docker pull doxtr/reactor:0.0.5
+
+      - name: Run test harness
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspaces/docs \
+            -w /workspaces/docs \
+            doxtr/reactor:0.0.5 \
+            bash -c '
+              pip install -e /workspaces/docs &&
+              cd test_harness &&
+              python test_runner.py --fail-on-pending
+            '
+      
+      - name: Upload Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-report
+          path: |
+            test_harness/build/reports/
+            test_harness/build/latex/
+
+  doc8-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - uses: actions/checkout@v6
+
+      - name: Pull container image
+        run: docker pull doxtr/reactor:0.0.5
+      
+      - name: Run doc8 on RST files
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspaces/docs \
+            -w /workspaces/docs/test_harness \
+            doxtr/reactor:0.0.5 \
+            bash -c 'for f in source/_test_cases/*.rst; do
+                echo "Checking $f..."
+                doc8 --config .doc8.ini "$f" || exit 1
+              done
+              echo "All RST files valid!"
+            '

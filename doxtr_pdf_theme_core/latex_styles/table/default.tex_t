@@ -1,0 +1,288 @@
+%% -------------------------------------------------------------------
+%% DOXTR CORE - DYNAMIC TABLE STYLING (GLUED MARGIN BOX & TOP RULE)
+%% -------------------------------------------------------------------
+\makeatletter
+
+%% Load Required TikZ Libraries for Patterns and Transparency Fades
+\usetikzlibrary{patterns, fadings}
+
+%% 1. Table Colors
+\definecolor{ddtableheaderbg}{cmyk}{<< t_conf.header_background_color_cmyk >>}
+\definecolor{ddtableheaderfg}{cmyk}{<< t_conf.header_font_color_cmyk >>}
+\definecolor{sphinxTableRowColorOdd}{cmyk}{<< t_conf.row_color_odd_cmyk >>}
+\definecolor{sphinxTableRowColorEven}{cmyk}{<< t_conf.row_color_even_cmyk >>}
+
+%% 2. Map Table Title Colors
+\definecolor{ddconttitlefgtable}{cmyk}{<< t_conf.title_background_color_cmyk >>}
+\definecolor{ddconttitletextfgtable}{cmyk}{<< t_conf.title_font_color_cmyk >>}
+
+%% 3. New Inverse Mask Color
+\definecolor{ddtablefademask}{cmyk}{<< t_conf.title_background_fade_mask_color_cmyk >>}
+
+%% Bulletproof Failsafes for Sphinx internal macros
+\colorlet{sphinxTableRowColor}{white}
+\colorlet{sphinxTableBorderColor}{black!30}
+
+%% 4. Header Font & Padding
+\renewcommand{\sphinxstyletheadfamily}{<% if t_conf.header_font %>\fontspec{<< t_conf.header_font >>}<% endif %><< t_conf.header_font_size >>\color{ddtableheaderfg}}
+
+%% Booktabs + Colortbl compatibility
+\setlength{\aboverulesep}{0pt}
+\setlength{\belowrulesep}{0pt}
+\setlength{\extrarowheight}{0.75ex}
+\arrayrulecolor{black!30}
+
+%% Color the table rules to perfectly blend with the container headers!
+\def\sphinxtoprule{\arrayrulecolor{ddconttitlefgtable}\toprule\arrayrulecolor{black!30}}
+\def\sphinxmidrule{\arrayrulecolor{ddtableheaderbg}\midrule\arrayrulecolor{black!30}}
+\def\sphinxbottomrule{\arrayrulecolor{ddconttitlefgtable}\bottomrule\arrayrulecolor{black!30}}
+
+<% if t_conf.title_style != 'classic' %>
+%% -------------------------------------------------------------------
+%% PLUG-IN CONTAINER TITLE STYLE INTEGRATION
+%% -------------------------------------------------------------------
+\tcbset{
+  ddtabletitlestyle/.style={
+    fonttitle=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>,
+    coltitle=ddconttitletextfgtable,
+    colbacktitle=ddconttitlefgtable,
+    doxtr<< t_conf.title_style >>style<% if doxtr_style_requires_arg[t_conf.title_style] %>={ddconttitlefgtable}<% endif %>
+  }
+}
+
+\long\def\dd@makecaption@table#1#2{%
+  \begingroup
+  \def\sphinxAtStartPar{\relax}\def\par{\relax}%
+  <% if t_conf.get('caption_position', 'side') in ['top', 'bottom'] %>
+    <% if t_conf.caption_position == 'top' %>
+      \gdef\sphinxaftertopcaption{\vspace*{\dimexpr-\baselineskip-\dp\strutbox-\extrarowheight+<< t_conf.get('caption_top_offset', '-0.5ex') >>\relax}\nointerlineskip}%
+    <% else %>
+      \gdef\sphinxaftertopcaption{}%
+      \vskip\abovecaptionskip
+    <% endif %>
+    \begin{tcolorbox}[
+      enhanced, breakable=false, empty, size=minimal, width=\linewidth, nobeforeafter,
+      fontupper=\fontsize{1pt}{1pt}\selectfont,
+      ddtabletitlestyle,
+      title={\strut\rule{<< t_conf.title_text_offset >>}{0pt}#1: #2\rule{<< t_conf.title_text_offset >>}{0pt}\strut}
+    ]
+    \end{tcolorbox}%
+    \endgraf
+    <% if t_conf.caption_position == 'top' %>\vskip\belowcaptionskip<% endif %>
+  <% else %>
+    \gdef\sphinxaftertopcaption{\vskip\belowcaptionskip}%
+    \Ifthispageodd{%
+      \begin{tikzpicture}[remember picture, overlay]
+        \node[anchor=south west, outer sep=0pt, rotate=-90, inner sep=0pt] (captionbox) at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \begin{tcolorbox}[
+            enhanced, breakable=false, empty, size=minimal, width=12cm, nobeforeafter,
+            ddtabletitlestyle,
+            title={\strut\rule{<< t_conf.title_text_offset >>}{0pt}#1: #2\rule{<< t_conf.title_text_offset >>}{0pt}\strut}
+          ]
+          \end{tcolorbox}%
+        };
+        \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+      \end{tikzpicture}%
+    }{%
+      \begin{tikzpicture}[remember picture, overlay]
+        \node[anchor=north west, outer sep=0pt, rotate=-90, inner sep=0pt] (captionbox) at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \begin{tcolorbox}[
+            enhanced, breakable=false, empty, size=minimal, width=12cm, nobeforeafter,
+            ddtabletitlestyle,
+            title={\strut\rule{<< t_conf.title_text_offset >>}{0pt}#1: #2\rule{<< t_conf.title_text_offset >>}{0pt}\strut}
+          ]
+          \end{tcolorbox}%
+        };
+        \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+      \end{tikzpicture}%
+    }%
+  <% endif %>
+  \endgroup
+}
+  
+\def\LT@makecaption#1#2#3{%
+  \LT@mcol\LT@cols {@{}p{\linewidth}@{}}{%
+    \begingroup
+    \def\sphinxAtStartPar{\relax}\def\par{\relax}%
+    <% if t_conf.get('caption_position', 'side') in ['top', 'bottom'] %>
+      <% if t_conf.caption_position == 'top' %>
+        \gdef\sphinxlongtablecapskipadjust{\dimexpr-\baselineskip-\dp\strutbox-\extrarowheight+<< t_conf.get('caption_top_offset', '-0.5ex') >>\relax}%
+      <% else %>
+        \gdef\sphinxlongtablecapskipadjust{0pt}%
+        \vskip\abovecaptionskip
+      <% endif %>
+      \begin{tcolorbox}[
+        enhanced, breakable=false, empty, size=minimal, width=\linewidth, nobeforeafter,
+        fontupper=\fontsize{1pt}{1pt}\selectfont,
+        ddtabletitlestyle,
+        title={\strut\rule{<< t_conf.title_text_offset >>}{0pt}#1{#2: }#3\rule{<< t_conf.title_text_offset >>}{0pt}\strut}
+      ]
+      \end{tcolorbox}%
+      \endgraf
+      <% if t_conf.caption_position == 'top' %>\vskip\belowcaptionskip<% endif %>
+    <% else %>
+      \gdef\sphinxlongtablecapskipadjust{-\abovecaptionskip}%
+      \Ifthispageodd{%
+        \begin{tikzpicture}[remember picture, overlay]
+          \node[anchor=south west, outer sep=0pt, rotate=-90, inner sep=0pt] (captionbox) at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+            \begin{tcolorbox}[
+              enhanced, breakable=false, empty, size=minimal, width=12cm, nobeforeafter,
+              ddtabletitlestyle,
+              title={\strut\rule{<< t_conf.title_text_offset >>}{0pt}#1{#2: }#3\rule{<< t_conf.title_text_offset >>}{0pt}\strut}
+            ]
+            \end{tcolorbox}%
+          };
+          \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+        \end{tikzpicture}%
+      }{%
+        \begin{tikzpicture}[remember picture, overlay]
+          \node[anchor=north west, outer sep=0pt, rotate=-90, inner sep=0pt] (captionbox) at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+            \begin{tcolorbox}[
+              enhanced, breakable=false, empty, size=minimal, width=12cm, nobeforeafter,
+              ddtabletitlestyle,
+              title={\strut\rule{<< t_conf.title_text_offset >>}{0pt}#1{#2: }#3\rule{<< t_conf.title_text_offset >>}{0pt}\strut}
+            ]
+            \end{tcolorbox}%
+          };
+          \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+        \end{tikzpicture}%
+      }%
+      \vspace*{-\baselineskip}\vspace*{-2.2ex}%
+    <% endif %>
+    \endgroup
+  }%
+}
+
+<% else %>
+%% -------------------------------------------------------------------
+%% CLASSIC TIKZ TITLE STYLE (Fading / Standard)
+%% -------------------------------------------------------------------
+<% if t_conf.title_fade_dots %>
+\def\ddTableFadeDotsCode{%
+  \pgfmathsetlengthmacro{\myoffset}{<< t_conf.title_text_offset >>}%
+  \pgfmathsetlengthmacro{\myfadeoffset}{<< t_conf.title_background_fade_length >>}%
+  <% if t_conf.title_background_fade_shape == 'triangle' %>
+  \def\ddFadePath{($(captionbox.south east) + (0, \myoffset)$) -- ($(captionbox.north east) + (0, \myoffset)$) -- ($ (captionbox.south east)!0.5!(captionbox.north east) + (0, \myoffset - \myfadeoffset) $) -- cycle}
+  <% else %>
+  \def\ddFadePath{($(captionbox.south east) + (0, \myoffset)$) rectangle ($(captionbox.north east) + (0, \myoffset - \myfadeoffset)$)}
+  <% endif %>
+  \fill[ddconttitlefgtable] (captionbox.south west) rectangle ($(captionbox.north east) + (0, \myoffset)$);
+  \fill[ddconttitlefgtable, path fading=south] \ddFadePath;
+  \fill[pattern=crosshatch dots, pattern color=ddconttitlefgtable] \ddFadePath;
+  \fill[ddtablefademask, path fading=north] \ddFadePath;
+}
+<% endif %>
+
+\long\def\dd@makecaption@table#1#2{%
+  \begingroup
+  \def\sphinxAtStartPar{\relax}\def\par{\relax}%
+  <% if t_conf.get('caption_position', 'side') in ['top', 'bottom'] %>
+    <% if t_conf.caption_position == 'top' %>
+      \gdef\sphinxaftertopcaption{\vspace*{\dimexpr-\dp\strutbox-\extrarowheight+<< t_conf.get('caption_top_offset', '-0.5ex') >>\relax}\nointerlineskip}%
+    <% else %>
+      \gdef\sphinxaftertopcaption{}%
+      \vskip\abovecaptionskip
+    <% endif %>
+    \noindent\begin{tikzpicture}
+      \node[anchor=south west, outer sep=0pt, text opacity=0, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] (captionbox) at (0,0) {%
+        \def\par{\endgraf}\begin{varwidth}{\linewidth}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+      };
+      \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+      \node[anchor=south west, outer sep=0pt, text=ddconttitletextfgtable, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] at (0,0) {%
+        \def\par{\endgraf}\begin{varwidth}{\linewidth}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+      };
+    \end{tikzpicture}%
+    \endgraf
+    <% if t_conf.caption_position == 'top' %>\vskip\belowcaptionskip<% endif %>
+  <% else %>
+    \gdef\sphinxaftertopcaption{\vskip\belowcaptionskip}%
+    \Ifthispageodd{%
+      \begin{tikzpicture}[remember picture, overlay]
+        \node[anchor=south west, outer sep=0pt, rotate=-90, text opacity=0, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] (captionbox) at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \def\par{\endgraf}\begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        <% if t_conf.title_fade_dots %>\ddTableFadeDotsCode<% else %>
+        \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+        <% endif %>
+        \node[anchor=south west, outer sep=0pt, rotate=-90, text=ddconttitletextfgtable, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \def\par{\endgraf}\begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+      \end{tikzpicture}%
+    }{%
+      \begin{tikzpicture}[remember picture, overlay]
+        \node[anchor=north west, outer sep=0pt, rotate=-90, text opacity=0, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] (captionbox) at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \def\par{\endgraf}\begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        <% if t_conf.title_fade_dots %>\ddTableFadeDotsCode<% else %>
+        \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+        <% endif %>
+        \node[anchor=north west, outer sep=0pt, rotate=-90, text=ddconttitletextfgtable, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \def\par{\endgraf}\begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+      \end{tikzpicture}%
+    }%
+  <% endif %>
+  \endgroup
+}
+  
+\def\LT@makecaption#1#2#3{%
+  \LT@mcol\LT@cols {@{}p{\linewidth}@{}}{%
+    \begingroup
+    \def\sphinxAtStartPar{\relax}\def\par{\relax}%
+    <% if t_conf.get('caption_position', 'side') in ['top', 'bottom'] %>
+      <% if t_conf.caption_position == 'top' %>
+        \gdef\sphinxlongtablecapskipadjust{\dimexpr-\dp\strutbox-\extrarowheight+<< t_conf.get('caption_top_offset', '-0.5ex') >>\relax}%
+      <% else %>
+        \gdef\sphinxlongtablecapskipadjust{0pt}%
+        \vskip\abovecaptionskip
+      <% endif %>
+      \noindent\begin{tikzpicture}
+        \node[anchor=south west, outer sep=0pt, text opacity=0, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] (captionbox) at (0,0) {%
+          \def\par{\endgraf}\begin{varwidth}{\linewidth}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+        \node[anchor=south west, outer sep=0pt, text=ddconttitletextfgtable, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] at (0,0) {%
+          \def\par{\endgraf}\begin{varwidth}{\linewidth}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+      \end{tikzpicture}%
+      \endgraf
+      <% if t_conf.caption_position == 'top' %>\vskip\belowcaptionskip<% endif %>
+    <% else %>
+      \gdef\sphinxlongtablecapskipadjust{-\abovecaptionskip}%
+      \Ifthispageodd{%
+        \begin{tikzpicture}[remember picture, overlay]
+          \node[anchor=south west, outer sep=0pt, rotate=-90, text opacity=0, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] (captionbox) at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+            \def\par{\endgraf}\begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+          };
+          <% if t_conf.title_fade_dots %>\ddTableFadeDotsCode<% else %>
+          \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+          <% endif %>
+          \node[anchor=south west, outer sep=0pt, rotate=-90, text=ddconttitletextfgtable, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+            \def\par{\endgraf}\begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+          };
+          \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+        \end{tikzpicture}%
+      }{%
+        \begin{tikzpicture}[remember picture, overlay]
+          \node[anchor=north west, outer sep=0pt, rotate=-90, text opacity=0, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] (captionbox) at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+            \def\par{\endgraf}\begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+          };
+          <% if t_conf.title_fade_dots %>\ddTableFadeDotsCode<% else %>
+          \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+          <% endif %>
+          \node[anchor=north west, outer sep=0pt, rotate=-90, text=ddconttitletextfgtable, inner sep=<< t_conf.title_padding >>, font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>] at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+            \def\par{\endgraf}\begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+          };
+          \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+        \end{tikzpicture}%
+      }%
+      \vspace*{-\baselineskip}\vspace*{-2.2ex}%
+    <% endif %>
+    \endgroup
+  }%
+}
+<% endif %>
+  
+\makeatother

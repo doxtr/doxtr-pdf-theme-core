@@ -1,0 +1,179 @@
+%% -------------------------------------------------------------------
+%% DOXTR CORE - DYNAMIC TABLE STYLING (GLUED MARGIN BOX & TOP RULE)
+%% -------------------------------------------------------------------
+\makeatletter
+
+%% Load Required TikZ Libraries for Patterns and Transparency Fades
+\usetikzlibrary{patterns, fadings}
+
+%% 1. Table Colors
+\definecolor{ddtableheaderbg}{cmyk}{<< t_conf.header_background_color_cmyk >>}
+\definecolor{ddtableheaderfg}{cmyk}{<< t_conf.header_font_color_cmyk >>}
+\definecolor{sphinxTableRowColorOdd}{cmyk}{<< t_conf.row_color_odd_cmyk >>}
+\definecolor{sphinxTableRowColorEven}{cmyk}{<< t_conf.row_color_even_cmyk >>}
+
+%% 2. Map Table Title Colors
+\definecolor{ddconttitlefgtable}{cmyk}{<< t_conf.title_background_color_cmyk >>}
+\definecolor{ddconttitletextfgtable}{cmyk}{<< t_conf.title_font_color_cmyk >>}
+
+%% 3. New Inverse Mask Color
+\definecolor{ddtablefademask}{cmyk}{<< t_conf.title_background_fade_mask_color_cmyk >>}
+
+%% 4. Header Font & Padding
+\renewcommand{\sphinxstyletheadfamily}{<% if t_conf.header_font %>\fontspec{<< t_conf.header_font >>}<% endif %><< t_conf.header_font_size >>\color{ddtableheaderfg}}
+
+%% Booktabs + Colortbl compatibility
+\setlength{\aboverulesep}{0pt}
+\setlength{\belowrulesep}{0pt}
+\setlength{\extrarowheight}{0.75ex}
+\arrayrulecolor{black!30}
+
+%% 5. Master Fading Macro (Dynamic Pathing System)
+<% if t_conf.title_fade_dots %>
+\def\ddTableFadeDotsCode{%
+  \pgfmathsetlengthmacro{\myoffset}{<< t_conf.title_text_offset >>}%
+  \pgfmathsetlengthmacro{\myfadeoffset}{<< t_conf.title_background_fade_length >>}%
+  
+  % Define the shared geometric boundary
+  <% if t_conf.title_background_fade_shape == 'triangle' %>
+  \def\ddFadePath{($(captionbox.south east) + (0, \myoffset)$) -- ($(captionbox.north east) + (0, \myoffset)$) -- ($ (captionbox.south east)!0.5!(captionbox.north east) + (0, \myoffset - \myfadeoffset) $) -- cycle}
+  <% else %>
+  \def\ddFadePath{($(captionbox.south east) + (0, \myoffset)$) rectangle ($(captionbox.north east) + (0, \myoffset - \myfadeoffset)$)}
+  <% endif %>
+  
+  % LAYER 1: Solid Blue Background (Covers the text area)
+  \fill[ddconttitlefgtable] (captionbox.south west) rectangle ($(captionbox.north east) + (0, \myoffset)$);
+  
+  % LAYER 2: Configurable Under-layer
+  \fill[ddconttitlefgtable, path fading=south] \ddFadePath;
+  
+  % LAYER 3: Solid Crosshatch Dots (Masked to exact shape)
+  \fill[pattern=crosshatch dots, pattern color=ddconttitlefgtable] \ddFadePath;
+    
+  % LAYER 4: The Inverse Mask! (Fades from transparent top to solid mask color bottom)
+  \fill[ddtablefademask, path fading=north] \ddFadePath;
+}
+<% endif %>
+
+%% 6. Patch Standard Table Captions
+\long\def\dd@makecaption@table#1#2{%
+  \begingroup
+  \def\sphinxAtStartPar{\relax}\def\par{\relax}%
+  \Ifthispageodd{%
+    % ODD PAGE: Right margin, glued to \linewidth
+    \begin{tikzpicture}[remember picture, overlay]
+      % STEP 1: Invisible Structure Node
+      \node[
+        anchor=south west, outer sep=0pt, rotate=-90, text opacity=0, 
+        inner sep=<< t_conf.title_padding >>, 
+        font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>
+      ] (captionbox) at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+        \begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+      };
+      
+      % STEP 2: Draw Background Layers
+      <% if t_conf.title_fade_dots %>\ddTableFadeDotsCode<% else %>
+      \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+      <% endif %>
+      
+      % STEP 3: Draw Visible Text
+      \node[
+        anchor=south west, outer sep=0pt, rotate=-90, text=ddconttitletextfgtable, 
+        inner sep=<< t_conf.title_padding >>, 
+        font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>
+      ] at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+        \begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+      };
+      \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+    \end{tikzpicture}%
+  }{%
+    % EVEN PAGE: Left margin, glued to 0pt
+    \begin{tikzpicture}[remember picture, overlay]
+      % STEP 1: Invisible Structure Node
+      \node[
+        anchor=north west, outer sep=0pt, rotate=-90, text opacity=0, 
+        inner sep=<< t_conf.title_padding >>, 
+        font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>
+      ] (captionbox) at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+        \begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+      };
+      
+      % STEP 2: Draw Background Layers
+      <% if t_conf.title_fade_dots %>\ddTableFadeDotsCode<% else %>
+      \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+      <% endif %>
+      
+      % STEP 3: Draw Visible Text
+      \node[
+        anchor=north west, outer sep=0pt, rotate=-90, text=ddconttitletextfgtable, 
+        inner sep=<< t_conf.title_padding >>, 
+        font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>
+      ] at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+        \begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1: #2\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+      };
+      \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+    \end{tikzpicture}%
+  }%
+  \endgroup
+}
+  
+%% 7. Patch Longtable (Multi-page) Captions
+\def\LT@makecaption#1#2#3{%
+  \LT@mcol\LT@cols {@{}p{\linewidth}@{}}{%
+    \begingroup
+    \def\sphinxAtStartPar{\relax}\def\par{\relax}%
+    \Ifthispageodd{%
+      % ODD PAGE: Right margin, glued to \linewidth
+      \begin{tikzpicture}[remember picture, overlay]
+        \node[
+          anchor=south west, outer sep=0pt, rotate=-90, text opacity=0, 
+          inner sep=<< t_conf.title_padding >>, 
+          font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>
+        ] (captionbox) at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        
+        <% if t_conf.title_fade_dots %>\ddTableFadeDotsCode<% else %>
+        \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+        <% endif %>
+        
+        \node[
+          anchor=south west, outer sep=0pt, rotate=-90, text=ddconttitletextfgtable, 
+          inner sep=<< t_conf.title_padding >>, 
+          font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>
+        ] at (\linewidth, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+      \end{tikzpicture}%
+    }{%
+      % EVEN PAGE: Left margin, glued to 0pt
+      \begin{tikzpicture}[remember picture, overlay]
+        \node[
+          anchor=north west, outer sep=0pt, rotate=-90, text opacity=0, 
+          inner sep=<< t_conf.title_padding >>, 
+          font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>
+        ] (captionbox) at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        
+        <% if t_conf.title_fade_dots %>\ddTableFadeDotsCode<% else %>
+        \fill[ddconttitlefgtable] (captionbox.south west) rectangle (captionbox.north east);
+        <% endif %>
+        
+        \node[
+          anchor=north west, outer sep=0pt, rotate=-90, text=ddconttitletextfgtable, 
+          inner sep=<< t_conf.title_padding >>, 
+          font=<% if t_conf.title_font %>\fontspec{<< t_conf.title_font >>}<% endif %><< t_conf.title_font_size >>
+        ] at (0pt, \dimexpr\baselineskip+1.0ex+\heavyrulewidth\relax) {%
+          \begin{varwidth}{12cm}\raggedright\rule{<< t_conf.title_text_offset >>}{0pt}\strut #1{#2: }#3\strut\rule{<< t_conf.title_text_offset >>}{0pt}\end{varwidth}%
+        };
+        \draw[black!30, line width=\heavyrulewidth] (captionbox.north west) -- (captionbox.south west);
+      \end{tikzpicture}%
+    }%
+    \endgroup
+    \vspace*{-\baselineskip}\vspace*{-2.2ex}%
+  }%
+}
+  
+\makeatother

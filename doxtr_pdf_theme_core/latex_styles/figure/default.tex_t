@@ -1,0 +1,38 @@
+%% -------------------------------------------------------------------
+%% DOXTR CORE - DEFAULT FIGURE CAPTION STYLE
+%% -------------------------------------------------------------------
+\definecolor{ddfigcaptionbg}{cmyk}{<< f_conf.caption_background_color_cmyk >>}
+\definecolor{ddfigcaptionfg}{cmyk}{<< f_conf.caption_font_color_cmyk >>}
+
+%% Auto-calculate a beautiful accent color by mixing the text and background
+\colorlet{ddfigaccent}{ddfigcaptionfg!60!ddfigcaptionbg}
+
+\makeatletter
+\long\def\dd@makecaption@figure#1#2{%
+  \vskip\abovecaptionskip
+  \begin{tcolorbox}[
+    enhanced,
+    breakable,
+    frame hidden,
+    colback=ddfigcaptionbg,
+    coltext=ddfigcaptionfg,
+    boxrule=0pt,
+    arc=4pt,
+    boxsep=0pt,
+    left=<< f_conf.caption_padding >>, 
+    right=<< f_conf.caption_padding >>, 
+    top=<< f_conf.caption_padding >>, 
+    bottom=<< f_conf.caption_padding >>,
+    halign=<< f_conf.caption_align >>,
+    % Showcase framework capabilities with a subtle drop shadow
+    drop fuzzy shadow=black!8!white,
+    % Professional thick left accent line
+    borderline west={3pt}{0pt}{ddfigaccent}
+  ]
+    <% if f_conf.caption_font %>\fontspec{<< f_conf.caption_font >>}<% endif %><< f_conf.caption_font_size >>%
+    % Modern layout format: "Figure X | The caption text"
+    {\bfseries\color{ddfigaccent} #1}\hspace{0.5em}\textcolor{ddfigaccent}{|}\hspace{0.5em}#2
+  \end{tcolorbox}%
+  \vskip\belowcaptionskip
+}
+\makeatother

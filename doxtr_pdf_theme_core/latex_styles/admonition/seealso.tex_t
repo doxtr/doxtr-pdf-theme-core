@@ -1,0 +1,43 @@
+% --- Seealso Admonition Style ---
+% A 3/4 open box style: left, bottom, and right borders with rounded bottom corners.
+% The top is open, with a small arrow at the top-right corner pointing up-right.
+
+\newtcolorbox{ddadmonbox@<< admon_style_name >>}[2]{
+    enhanced, breakable, parbox=false,
+    before skip=\csname ddadmon@#1@beforeskip\endcsname,
+    after skip=\csname ddadmon@#1@afterskip\endcsname,
+    coltext=ddadmon@#1@contentfg,
+    fontupper=\csname ddadmon@#1@contentfont\endcsname,
+    colback=ddadmon@#1@contentbg,
+    code={\ifodd\value{tcblayer}\else \tcbset{colback=ddadmon@#1@contentbgnested}\fi},
+    left=1.5ex, right=1em, top=1em, bottom=1em,
+    % 3/4 open box: left, bottom, right borders only (no top line)
+    toprule=0pt,
+    rightrule=1.5pt,
+    leftrule=1.5pt,
+    bottomrule=1.5pt,
+    rounded corners=south,
+    underlay unbroken and first={
+        \draw[
+            draw=ddadmon@#1@titlebg,
+            line width=1.5pt,
+            rounded corners=3mm
+        ] (frame.south west) -- (frame.south east) -- (frame.north east);
+        % Arrow at top-right corner: line up, then diagonal up-right
+        \draw[
+            draw=ddadmon@#1@titlebg,
+            line width=1.5pt
+        ] (frame.north east) -- ++(0, 3mm) -- ++(2.5mm, -2.5mm);
+    },
+    underlay middle and last={
+        \draw[
+            draw=ddadmon@#1@titlebg,
+            line width=1.5pt,
+            rounded corners=3mm
+        ] (frame.south west) -- (frame.south east) -- (frame.north east);
+    },
+    before upper={
+        \noindent\textbf{\color{ddadmon@#1@titlebg}{\csname ddadmon@#1@iconsize\endcsname\csname ddadmon@#1@icon\endcsname}\quad#2}
+        \par\vspace{0.4em}
+    }
+}

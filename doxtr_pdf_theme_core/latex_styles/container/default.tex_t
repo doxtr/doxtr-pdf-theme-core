@@ -1,0 +1,11 @@
+\definecolor{ddconttitlefg<< c_name >>}{cmyk}{<< c_conf.title_color_cmyk >>}
+\definecolor{ddconttitletextfg<< c_name >>}{cmyk}{<< c_conf.title_font_color_cmyk >>}
+\definecolor{ddconticonfg<< c_name >>}{cmyk}{<< c_conf.title_icon_color_cmyk >>}
+\definecolor{ddcontcontentfg<< c_name >>}{cmyk}{<< c_conf.content_font_color_cmyk >>}
+\definecolor{ddcontcontentbg<< c_name >>}{cmyk}{<< c_conf.content_background_color_cmyk >>}
+
+\expandafter\def\csname ddconticon<< c_name >>\endcsname{<% if c_conf.title_icon %>{<< c_conf.title_icon_font_size >>\color{ddconticonfg<< c_name >>}<< c_conf.title_icon >>}\hspace{0.5em}<% endif %>}
+
+\tcbset{ddcontainerstyle<< c_name >>/.style={enhanced, breakable, parbox=false, before skip=1.5em plus 0.5em minus 0.5em, after skip=1.5em plus 0.5em minus 0.5em, colback=ddcontcontentbg<< c_name >>, coltext=ddcontcontentfg<< c_name >>, fontupper=<% if c_conf.content_font %>\fontspec{<< c_conf.content_font >>}<% endif %><< c_conf.content_font_size >>, <% if not c_conf.container_frame %>frame hidden, boxrule=0pt, <% else %>colframe=ddconttitlefg<< c_name >>!50!black, boxrule=1pt, <% endif %>boxsep=0.25em, left=0.5em, right=0.5em, <% if c_conf.match_text_width %>grow to left by=\dimexpr 0.75em+<% if c_conf.container_frame %>1pt<% else %>0pt<% endif %>\relax, grow to right by=\dimexpr 0.75em+<% if c_conf.container_frame %>1pt<% else %>0pt<% endif %>\relax, <% endif %>},ddcontainertitlestyle<< c_name >>/.style={fonttitle=<% if c_conf.title_font %>\fontspec{<< c_conf.title_font >>}<% endif %><< c_conf.title_font_size >>, coltitle=ddconttitletextfg<< c_name >>, colbacktitle=ddconttitlefg<< c_name >>, doxtr<< c_conf.title_style >>style<% if doxtr_style_requires_arg[c_conf.title_style] %>={ddconttitlefg<< c_name >>}<% endif %>}}
+
+\newtcolorbox{ddcontainer<< c_name >>}[1][]{ddcontainerstyle<< c_name >>, #1}

@@ -1,0 +1,55 @@
+%% -------------------------------------------------------------------
+%% DOXTR CORE - DYNAMIC CODE STYLING
+%% -------------------------------------------------------------------
+\makeatletter
+
+\sphinxsetup{verbatimwithframe=false, verbatimsep=0pt}
+\renewcommand{\sphinxVerbatim@FrameCommand}[1]{#1}
+
+\providecommand{\ddCurrentCodeLang}{generic}
+
+<% for lang, conf in doxtr_code.items() %>
+\definecolor{ddcodebg_<< lang >>}{cmyk}{<< conf.content_background_color_cmyk >>}
+\definecolor{ddcodefg_<< lang >>}{cmyk}{<< conf.content_font_color_cmyk >>}
+\definecolor{ddcodetitlebg_<< lang >>}{cmyk}{<< conf.title_background_color_cmyk >>}
+\definecolor{ddcodetitlefg_<< lang >>}{cmyk}{<< conf.title_font_color_cmyk >>}
+\definecolor{ddcodeborder_<< lang >>}{cmyk}{<< conf.border_color_cmyk >>}
+\definecolor{ddcodeicon_<< lang >>}{cmyk}{<< conf.icon_color_cmyk >>}
+
+\expandafter\def\csname ddIconCommand<< lang >>\endcsname{<< conf.icon >>}
+
+<% set title_parts = [] %>
+<% if conf.show_mac_dots and conf.icon and conf.icon_position == 'before_mac_dots' %>
+  <% set dummy = title_parts.append('\csname ddIconCommand' ~ lang ~ '\endcsname') %>
+  <% set dummy = title_parts.append('\\hspace{0.8em}') %>
+  <% set dummy = title_parts.append('\\tikz[baseline=-0.6ex]{\\fill[red!80!white] (0,0) circle (3pt); \\fill[yellow!80!black] (1em,0) circle (3pt); \\fill[green!80!black] (2em,0) circle (3pt);}') %>
+<% elif conf.show_mac_dots and conf.icon %>
+  <% set dummy = title_parts.append('\\tikz[baseline=-0.6ex]{\\fill[red!80!white] (0,0) circle (3pt); \\fill[yellow!80!black] (1em,0) circle (3pt); \\fill[green!80!black] (2em,0) circle (3pt);}') %>
+  <% set dummy = title_parts.append('\\hspace{0.8em}') %>
+  <% set dummy = title_parts.append('\csname ddIconCommand' ~ lang ~ '\endcsname') %>
+<% elif conf.show_mac_dots %>
+  <% set dummy = title_parts.append('\\tikz[baseline=-0.6ex]{\\fill[red!80!white] (0,0) circle (3pt); \\fill[yellow!80!black] (1em,0) circle (3pt); \\fill[green!80!black] (2em,0) circle (3pt);}') %>
+<% elif conf.icon %>
+  <% set dummy = title_parts.append('\csname ddIconCommand' ~ lang ~ '\endcsname') %>
+<% endif %>
+
+<% if title_parts|length > 0 %><% set dummy = title_parts.append('\\hspace{0.8em}') %><% endif %>
+<% if conf.language_label %><% set dummy = title_parts.append(conf.language_label) %>
+<% else %><% set dummy = title_parts.append('\\MakeUppercase{\\ddCurrentCodeLang}') %><% endif %>
+
+\tcbset{doxtrcodestyle<< lang >>/.style={colback=ddcodebg_<< lang >>, coltext=ddcodefg_<< lang >>, colframe=ddcodeborder_<< lang >>, colbacktitle=ddcodetitlebg_<< lang >>, coltitle=ddcodetitlefg_<< lang >>, boxrule=<< conf.border_width >>, fontupper=<% if conf.content_font %>\fontspec{<< conf.content_font >>}<% endif %><< conf.content_font_size >>, fonttitle=<% if conf.title_font %>\fontspec{<< conf.title_font >>}<% endif %><< conf.title_font_size >>, title={\vspace*{0.1ex}<< title_parts | join('') >>}}}
+<% endfor %>
+
+\tcolorboxenvironment{sphinxVerbatim}{enhanced, breakable, sharp corners=south, rounded corners=north, arc=4pt, boxsep=0pt, left=1em, right=1em, top=0.5em, bottom=0.5em, toptitle=0.5ex, bottomtitle=0.5ex, doxtrcodestylegeneric, doxtrcodestyle\ddCurrentCodeLang/.try}
+
+% Neutralize framed.sty's \MakeFramed inside sphinxVerbatim: tcolorbox handles
+% all framing and page-breaking via the breakable option above.
+% This hook fires AFTER tcolorboxenvironment's hook (which opens the tcolorbox),
+% so the redefinitions are local to the tcolorbox group and auto-restore on close.
+\def\dd@NeutralMakeFramed#1{\@tempdima\z@\let\width\@tempdima #1}
+\AddToHook{env/sphinxVerbatim/before}{%
+    \let\MakeFramed\dd@NeutralMakeFramed
+    \def\endMakeFramed{}%
+}
+
+\makeatother

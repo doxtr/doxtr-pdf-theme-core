@@ -1,0 +1,721 @@
+\usepackage{calc}
+\usepackage{pdflscape}
+
+%% ----------------------------------------------------
+%% RESOLVE SPHINX vs KOMA-SCRIPT CONFLICT
+%% Sphinx hardcodes fancyhdr and titlesec. We undefine 
+%% their macros so scrlayer-scrpage can safely load!
+%% ----------------------------------------------------
+\let\lhead\undefined
+\let\chead\undefined
+\let\rhead\undefined
+\let\lfoot\undefined
+\let\cfoot\undefined
+\let\rfoot\undefined
+\let\newpagestyle\undefined
+\let\renewpagestyle\undefined
+
+\usepackage[automark]{scrlayer-scrpage}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins, hooks, breakable}
+\usepackage{varwidth}
+\usepackage{xpatch}
+% Load the relsize package to enable decimal scaling used in doxtr_containers themes
+% Let's us use: r'\relscale{1.2}' to scale fonts
+\usepackage{relsize}
+
+%% ----------------------------------------------------
+%% MICROTYPE — Typographic refinement
+%% Only enabled when draft mode is OFF (production builds).
+%% Draft mode = fast iteration; microtype = typographic polish.
+%% ----------------------------------------------------
+<% if doxtr_microtype_enabled %>
+\usepackage[
+  protrusion=<% if doxtr_microtype_protrusion %>true<% else %>false<% endif %>,
+  expansion=<% if doxtr_microtype_expansion %>true<% else %>false<% endif %>,
+  kerning=<% if doxtr_microtype_kerning %>true<% else %>false<% endif %>,
+  stretch=<< doxtr_microtype_stretch >>,
+  shrink=<< doxtr_microtype_shrink >>
+]{microtype}
+<% endif %>
+
+%% Document Geometry and Header/Footer Heights
+<% if doxtr_headsep or doxtr_footskip %>
+\geometry{<% if doxtr_headsep %>headsep=<< doxtr_headsep >><% endif %><% if doxtr_headsep and doxtr_footskip %>, <% endif %><% if doxtr_footskip %>footskip=<< doxtr_footskip >><% endif %>}
+<% endif %>
+<% if doxtr_headheight or doxtr_footheight %>
+\KOMAoptions{<% if doxtr_headheight %>headheight=<< doxtr_headheight >><% endif %><% if doxtr_headheight and doxtr_footheight %>, <% endif %><% if doxtr_footheight %>footheight=<< doxtr_footheight >><% endif %>}
+<% endif %>
+
+\clearpairofpagestyles
+\ohead{\headmark}
+%% Starred commands mirror each other perfectly on both plain and scrheadings styles
+\ofoot*{\pagemark}
+<% if doxtr_footer_logo %>
+\ifoot*{\includegraphics[height=<< doxtr_footer_logo_height >>, keepaspectratio]{<< doxtr_footer_logo >>}}
+<% endif %>
+\pagestyle{scrheadings}
+
+%%% Draft Watermark
+<% if doxtr_draft_text %>
+\definecolor{dddraftcolor}{cmyk}{<< doxtr_draft_color_cmyk >>}
+\AddToHook{shipout/background}{%
+  \begin{tikzpicture}[remember picture, overlay]
+  
+  \ifodd\value{page}
+      \node[rotate=90, anchor=center, text opacity=<< doxtr_draft_opacity >>, text=dddraftcolor, font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>] at ([xshift=3em]current page.west) {<< doxtr_draft_text >>};
+  \else
+      \node[rotate=-90, anchor=center, text opacity=<< doxtr_draft_opacity >>, text=dddraftcolor, font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>] at ([xshift=-3em]current page.east) {<< doxtr_draft_text >>};
+  \fi
+  \end{tikzpicture}%
+}
+<% endif %>
+
+%%% Epigraph / Dictum Configuration Styles
+\makeatletter
+<% for level in ['epigraph', 'part_epigraph', 'chapter_epigraph', 'section_epigraph', 'subsection_epigraph', 'subsubsection_epigraph'] %>
+<% if v['doxtr_' ~ level ~ '_color'] %>\definecolor{dd<< level | replace('_', '') >>color}{cmyk}{<< v['doxtr_' ~ level ~ '_color'] >>}<% endif %>
+<% if v['doxtr_' ~ level ~ '_author_color'] %>\definecolor{dd<< level | replace('_', '') >>authorcolor}{cmyk}{<< v['doxtr_' ~ level ~ '_author_color'] >>}<% endif %>
+
+<% set macro_name = 'generic' if level == 'epigraph' else level | replace('_epigraph', '') %>
+\expandafter\def\csname ddepigraph@<< macro_name >>\endcsname{%
+  \renewcommand*{\dictumwidth}{<< v['doxtr_' ~ level ~ '_width'] >>}%
+  \renewcommand*{\dictumauthorformat}[1]{<< v['doxtr_' ~ level ~ '_format'] >>}%
+  \renewcommand*{\raggeddictum}{<< v['doxtr_' ~ level ~ '_align_box'] >>}%
+  \renewcommand*{\raggeddictumtext}{<< v['doxtr_' ~ level ~ '_align_text'] >>}%
+  \renewcommand*{\raggeddictumauthor}{<< v['doxtr_' ~ level ~ '_align_author'] >>}%
+  \setkomafont{dictumtext}{<% if v['doxtr_' ~ level ~ '_color'] %>\color{dd<< level | replace('_', '') >>color}<% endif %><% if v['doxtr_' ~ level ~ '_size'] %><< v['doxtr_' ~ level ~ '_size'] >><% endif %><% if v['doxtr_' ~ level ~ '_font'] %>\fontspec{<< v['doxtr_' ~ level ~ '_font'] >>}<% endif %>}%
+  \setkomafont{dictumauthor}{<% if v['doxtr_' ~ level ~ '_author_color'] %>\color{dd<< level | replace('_', '') >>authorcolor}<% endif %><% if v['doxtr_' ~ level ~ '_author_size'] %><< v['doxtr_' ~ level ~ '_author_size'] >><% endif %><% if v['doxtr_' ~ level ~ '_author_font'] %>\fontspec{<< v['doxtr_' ~ level ~ '_author_font'] >>}<% endif %>}%
+}
+<% endfor %>
+
+<% for p_num, bg_conf in doxtr_part_backgrounds.items() %>
+  <% if bg_conf.epigraph_color_cmyk %>\definecolor{ddpartepigraph<< p_num >>color}{cmyk}{<< bg_conf.epigraph_color_cmyk >>}<% endif %>
+  <% if bg_conf.epigraph_author_color_cmyk %>\definecolor{ddpartepigraphauthor<< p_num >>color}{cmyk}{<< bg_conf.epigraph_author_color_cmyk >>}<% endif %>
+  \expandafter\def\csname ddepigraph@part@<< p_num >>\endcsname{%
+    <% if bg_conf.epigraph_color_cmyk %>\addtokomafont{dictumtext}{\color{ddpartepigraph<< p_num >>color}}<% endif %>
+    <% if bg_conf.epigraph_author_color_cmyk %>\addtokomafont{dictumauthor}{\color{ddpartepigraphauthor<< p_num >>color}}<% endif %>
+  }
+<% endfor %>
+
+\newcommand{\setupddepigraph}[1]{%
+  \csname ddepigraph@#1\endcsname
+  \ifstr{#1}{part}{%
+    % Inside the preamble text, the part counter has already been incremented!
+    \csname ddepigraph@part@\the\value{part}\endcsname
+  }{}%
+}
+\makeatother
+
+%%% Title Page Injection
+<< doxtr_rendered_title_page >>
+
+%% Part Background Image/Color Injection
+<% if doxtr_part_backgrounds %>
+%% Pre-define colors to prevent pgfkeys errors
+<% for part_num, bg_conf in doxtr_part_backgrounds.items() %>
+  <% if bg_conf.background_color_cmyk %>\definecolor{ddpartbg<< part_num >>}{cmyk}{<< bg_conf.background_color_cmyk >>}<% endif %>
+  <% if bg_conf.font_color_cmyk %>\definecolor{ddpart<< part_num >>color}{cmyk}{<< bg_conf.font_color_cmyk >>}<% endif %>
+  <% if bg_conf.number_color_cmyk %>\definecolor{ddpart<< part_num >>numbercolor}{cmyk}{<< bg_conf.number_color_cmyk >>}<% endif %>
+  <% if bg_conf.number_part_color_cmyk %>\definecolor{ddpart<< part_num >>numberpartcolor}{cmyk}{<< bg_conf.number_part_color_cmyk >>}<% endif %>
+  <% if bg_conf.number_number_color_cmyk %>\definecolor{ddpart<< part_num >>numbernumbercolor}{cmyk}{<< bg_conf.number_number_color_cmyk >>}<% endif %>
+<% endfor %>
+<% endif %>
+
+%% Define the Global KOMA Hooks for Part Strings
+<% if doxtr_appendix_start_part %>
+\makeatletter
+\newcounter{ddPartCounter}
+\setcounter{ddPartCounter}{1}
+\xpretocmd{\part}{%
+  \ifnum\value{ddPartCounter}=<< doxtr_appendix_start_part >>\relax
+    \appendix
+    \setcounter{part}{0}% Reset part counter so it natively steps directly to A (1)
+    \renewcommand\thepart{\Alph{part}}%
+    \providecommand\theHpart{\Alph{part}}%
+    \renewcommand\theHpart{\Alph{part}}% <--- FIX FOR HYPERREF LINKS
+    <% if doxtr_appendix_chapter_numbering %>
+      \renewcommand\thechapter{\thepart.\arabic{chapter}}%
+      \providecommand\theHchapter{\thepart.\arabic{chapter}}%
+      \renewcommand\theHchapter{\thepart.\arabic{chapter}}% <--- FIX FOR HYPERREF LINKS
+    <% else %>
+      \setcounter{secnumdepth}{-1}% Hard-disable Sphinx's nested numbering engine
+    <% endif %>
+  \fi
+  \stepcounter{ddPartCounter}%
+}{}{}
+\makeatother
+<% endif %>
+
+\makeatletter
+\AtBeginDocument{
+  % Ensure literalblock lists (.lol) are opened for writing at the beginning of the document
+  \@ifundefined{addtotoclist}{}{\addtotoclist{lol}}
+  
+  % Patch Sphinx's index to use \addchap so it natively renders without numbers
+  \@ifundefined{theindex}{}{\xpatchcmd{\theindex}{\@makeschapterhead}{\addchap}{}{}}
+
+  % Force standard chapter-level numbering for Figures and Tables natively in LaTeX
+  \@ifundefined{c@chapter}{}{
+      \@ifundefined{counterwithin}{\usepackage{chngcntr}}{}
+      \counterwithin{figure}{chapter}
+      \counterwithin{table}{chapter}
+  }
+}
+\makeatother
+
+\newcommand{\ddpartcolorcmd}{<% if doxtr_part_color %>\color{ddpartcolor}<% endif %>}
+\newcommand{\ddpartsizecmd}{<% if doxtr_part_size %> << doxtr_part_size >><% endif %>}
+\newcommand{\ddpartfontcmd}{<% if doxtr_part_font %> \fontspec{<< doxtr_part_font >>}<% endif %>}
+\addtokomafont{part}{\ddpartcolorcmd\ddpartsizecmd\ddpartfontcmd}
+
+\newcommand{\ddpartnumbercolorcmd}{<% if doxtr_part_number_color %>\color{ddpartnumbercolor}<% endif %>}
+\newcommand{\ddpartnumbersizecmd}{<% if doxtr_part_number_size %> << doxtr_part_number_size >><% endif %>}
+\newcommand{\ddpartnumberfontcmd}{<% if doxtr_part_number_font %> \fontspec{<< doxtr_part_number_font >>}<% endif %>}
+\addtokomafont{partnumber}{\ddpartnumbercolorcmd\ddpartnumbersizecmd\ddpartnumberfontcmd}
+
+\newkomafont{partnumberpart}{}
+\newcommand{\ddpartnumberpartcolorcmd}{<% if doxtr_part_number_part_color %>\color{ddpartnumberpartcolor}<% endif %>}
+\newcommand{\ddpartnumberpartsizecmd}{<% if doxtr_part_number_part_size %> << doxtr_part_number_part_size >><% endif %>}
+\newcommand{\ddpartnumberpartfontcmd}{<% if doxtr_part_number_part_font %> \fontspec{<< doxtr_part_number_part_font >>}<% endif %>}
+\addtokomafont{partnumberpart}{\ddpartnumberpartcolorcmd\ddpartnumberpartsizecmd\ddpartnumberpartfontcmd}
+
+\newkomafont{partnumbernumber}{}
+\newcommand{\ddpartnumbernumbercolorcmd}{<% if doxtr_part_number_number_color %>\color{ddpartnumbernumbercolor}<% endif %>}
+\newcommand{\ddpartnumbernumbersizecmd}{<% if doxtr_part_number_number_size %> << doxtr_part_number_number_size >><% endif %>}
+\newcommand{\ddpartnumbernumberfontcmd}{<% if doxtr_part_number_number_font %> \fontspec{<< doxtr_part_number_number_font >>}<% endif %>}
+\addtokomafont{partnumbernumber}{\ddpartnumbernumbercolorcmd\ddpartnumbernumbersizecmd\ddpartnumbernumberfontcmd}
+
+\makeatletter
+\renewcommand*{\partheadstartvskip}{%
+  \thispagestyle{empty}% Force removal of headers/footers on Part pages
+  \edef\curpart{\the\numexpr\value{part}+1\relax}% Fix the off-by-one counter bug
+  
+  % Reset dynamic part text variables to global defaults
+  \renewcommand{\ddpartcolorcmd}{<% if doxtr_part_color %>\color{ddpartcolor}<% endif %>}%
+  \renewcommand{\ddpartsizecmd}{<% if doxtr_part_size %> << doxtr_part_size >><% endif %>}%
+  \renewcommand{\ddpartfontcmd}{<% if doxtr_part_font %> \fontspec{<< doxtr_part_font >>}<% endif %>}%
+  
+  \renewcommand{\ddpartnumbercolorcmd}{<% if doxtr_part_number_color %>\color{ddpartnumbercolor}<% endif %>}%
+  \renewcommand{\ddpartnumbersizecmd}{<% if doxtr_part_number_size %> << doxtr_part_number_size >><% endif %>}%
+  \renewcommand{\ddpartnumberfontcmd}{<% if doxtr_part_number_font %> \fontspec{<< doxtr_part_number_font >>}<% endif %>}%
+  
+  \renewcommand{\ddpartnumberpartcolorcmd}{<% if doxtr_part_number_part_color %>\color{ddpartnumberpartcolor}<% endif %>}%
+  \renewcommand{\ddpartnumberpartsizecmd}{<% if doxtr_part_number_part_size %> << doxtr_part_number_part_size >><% endif %>}%
+  \renewcommand{\ddpartnumberpartfontcmd}{<% if doxtr_part_number_part_font %> \fontspec{<< doxtr_part_number_part_font >>}<% endif %>}%
+  
+  \renewcommand{\ddpartnumbernumbercolorcmd}{<% if doxtr_part_number_number_color %>\color{ddpartnumbernumbercolor}<% endif %>}%
+  \renewcommand{\ddpartnumbernumbersizecmd}{<% if doxtr_part_number_number_size %> << doxtr_part_number_number_size >><% endif %>}%
+  \renewcommand{\ddpartnumbernumberfontcmd}{<% if doxtr_part_number_number_font %> \fontspec{<< doxtr_part_number_number_font >>}<% endif %>}%
+  
+<% if doxtr_part_backgrounds %>
+  % Apply specific part text property overrides
+  <% for part_num, bg_conf in doxtr_part_backgrounds.items() %>
+  \ifnum\curpart=<< part_num >>\relax
+    <% if bg_conf.font_color_cmyk %>\renewcommand{\ddpartcolorcmd}{\color{ddpart<< part_num >>color}}<% endif %>
+    <% if bg_conf.font %>\renewcommand{\ddpartfontcmd}{ \fontspec{<< bg_conf.font >>}}<% endif %>
+    <% if bg_conf.size %>\renewcommand{\ddpartsizecmd}{ << bg_conf.size >>}<% endif %>
+    
+    <% if bg_conf.number_color_cmyk %>\renewcommand{\ddpartnumbercolorcmd}{\color{ddpart<< part_num >>numbercolor}}<% endif %>
+    <% if bg_conf.number_font %>\renewcommand{\ddpartnumberfontcmd}{ \fontspec{<< bg_conf.number_font >>}}<% endif %>
+    <% if bg_conf.number_size %>\renewcommand{\ddpartnumbersizecmd}{ << bg_conf.number_size >>}<% endif %>
+    
+    <% if bg_conf.number_part_color_cmyk %>\renewcommand{\ddpartnumberpartcolorcmd}{\color{ddpart<< part_num >>numberpartcolor}}<% endif %>
+    <% if bg_conf.number_part_font %>\renewcommand{\ddpartnumberpartfontcmd}{ \fontspec{<< bg_conf.number_part_font >>}}<% endif %>
+    <% if bg_conf.number_part_size %>\renewcommand{\ddpartnumberpartsizecmd}{ << bg_conf.number_part_size >>}<% endif %>
+    
+    <% if bg_conf.number_number_color_cmyk %>\renewcommand{\ddpartnumbernumbercolorcmd}{\color{ddpart<< part_num >>numbernumbercolor}}<% endif %>
+    <% if bg_conf.number_number_font %>\renewcommand{\ddpartnumbernumberfontcmd}{ \fontspec{<< bg_conf.number_number_font >>}}<% endif %>
+    <% if bg_conf.number_number_size %>\renewcommand{\ddpartnumbernumbersizecmd}{ << bg_conf.number_number_size >>}<% endif %>
+  \fi
+  <% endfor %>
+
+  \begin{tikzpicture}[remember picture, overlay]
+    <% for part_num, bg_conf in doxtr_part_backgrounds.items() %>
+    \ifnum\curpart=<< part_num >>\relax
+      <% if bg_conf.image %>
+      \node[inner sep=0pt, anchor=center] at (current page.center) {\includegraphics[width=\paperwidth,height=\paperheight]{<< bg_conf.image >>}};
+      <% endif %>
+      <% if bg_conf.background_color_cmyk %>
+      \fill[ddpartbg<< part_num >>, opacity=<< bg_conf.opacity >>] (current page.south west) rectangle (current page.north east);
+      <% endif %>
+    \fi
+    <% endfor %>
+  \end{tikzpicture}%
+<% endif %>
+  \null\vskip\z@\@plus 1fil\relax
+}
+\makeatother
+
+%% Define Universal Element Colors
+<% if doxtr_title_color %>\definecolor{ddtitlecolor}{cmyk}{<< doxtr_title_color >>}<% endif %>
+<% if doxtr_subtitle_color %>\definecolor{ddsubtitlecolor}{cmyk}{<< doxtr_subtitle_color >>}<% endif %>
+<% if doxtr_author_color %>\definecolor{ddauthorcolor}{cmyk}{<< doxtr_author_color >>}<% endif %>
+<% if doxtr_date_color %>\definecolor{dddatecolor}{cmyk}{<< doxtr_date_color >>}<% endif %>
+<% if doxtr_release_version_color %>\definecolor{ddreleaseversioncolor}{cmyk}{<< doxtr_release_version_color >>}<% endif %>
+<% if doxtr_part_color %>\definecolor{ddpartcolor}{cmyk}{<< doxtr_part_color >>}<% endif %>
+<% if doxtr_chapter_color %>\definecolor{ddchaptercolor}{cmyk}{<< doxtr_chapter_color >>}<% endif %>
+<% if doxtr_section_color %>\definecolor{ddsectioncolor}{cmyk}{<< doxtr_section_color >>}<% endif %>
+<% if doxtr_subsection_color %>\definecolor{ddsubsectioncolor}{cmyk}{<< doxtr_subsection_color >>}<% endif %>
+<% if doxtr_subsubsection_color %>\definecolor{ddsubsubsectioncolor}{cmyk}{<< doxtr_subsubsection_color >>}<% endif %>
+<% if doxtr_rubric_color %>\definecolor{ddrubriccolor}{cmyk}{<< doxtr_rubric_color >>}<% endif %>
+<% if doxtr_epigraph_color %>\definecolor{ddepigraphcolor}{cmyk}{<< doxtr_epigraph_color >>}<% endif %>
+<% if doxtr_epigraph_author_color %>\definecolor{ddepigraphauthorcolor}{cmyk}{<< doxtr_epigraph_author_color >>}<% endif %>
+
+%% ----------------------------------------------------
+%% SAFE FALLBACK COLOR INHERITANCE
+%% ----------------------------------------------------
+<% if doxtr_part_number_color %>\definecolor{ddpartnumbercolor}{cmyk}{<< doxtr_part_number_color >>}<% else %>\definecolor{ddpartnumbercolor}{cmyk}{0, 0, 0, 1}<% endif %>
+<% if doxtr_part_number_part_color %>\definecolor{ddpartnumberpartcolor}{cmyk}{<< doxtr_part_number_part_color >>}<% else %>\colorlet{ddpartnumberpartcolor}{ddpartnumbercolor}<% endif %>
+<% if doxtr_part_number_number_color %>\definecolor{ddpartnumbernumbercolor}{cmyk}{<< doxtr_part_number_number_color >>}<% else %>\colorlet{ddpartnumbernumbercolor}{ddpartnumbercolor}<% endif %>
+
+<% if doxtr_chapter_number_color %>\definecolor{ddchapternumbercolor}{cmyk}{<< doxtr_chapter_number_color >>}<% else %>\colorlet{ddchapternumbercolor}{ddpartnumbercolor}<% endif %>
+<% if doxtr_chapter_line_color %>\definecolor{ddchapterlinecolor}{cmyk}{<< doxtr_chapter_line_color >>}<% else %>\colorlet{ddchapterlinecolor}{ddchapternumbercolor!45}<% endif %>
+
+<% if doxtr_section_number_color %>\definecolor{ddsectionnumbercolor}{cmyk}{<< doxtr_section_number_color >>}<% else %>\colorlet{ddsectionnumbercolor}{ddchapternumbercolor}<% endif %>
+<% if doxtr_subsection_number_color %>\definecolor{ddsubsectionnumbercolor}{cmyk}{<< doxtr_subsection_number_color >>}<% else %>\colorlet{ddsubsectionnumbercolor}{ddsectionnumbercolor}<% endif %>
+<% if doxtr_subsubsection_number_color %>\definecolor{ddsubsubsectionnumbercolor}{cmyk}{<< doxtr_subsubsection_number_color >>}<% else %>\colorlet{ddsubsubsectionnumbercolor}{ddsubsectionnumbercolor}<% endif %>
+
+%% Apply Universal Fonts, Sizes, and Colors to KOMA-Script Elements
+<% if doxtr_title_font or doxtr_title_color or doxtr_title_size %>
+\addtokomafont{title}{<% if doxtr_title_color %>\color{ddtitlecolor}<% endif %><% if doxtr_title_size %><< doxtr_title_size >><% endif %><% if doxtr_title_font %>\fontspec{<< doxtr_title_font >>}<% endif %>}
+<% endif %>
+
+<% if doxtr_subtitle_font or doxtr_subtitle_color or doxtr_subtitle_size %>
+\addtokomafont{subtitle}{<% if doxtr_subtitle_color %>\color{ddsubtitlecolor}<% endif %><% if doxtr_subtitle_size %><< doxtr_subtitle_size >><% endif %><% if doxtr_subtitle_font %>\fontspec{<< doxtr_subtitle_font >>}<% endif %>}
+<% endif %>
+
+<% if doxtr_author_font or doxtr_author_color or doxtr_author_size %>
+\addtokomafont{author}{<% if doxtr_author_color %>\color{ddauthorcolor}<% endif %><% if doxtr_author_size %><< doxtr_author_size >><% endif %><% if doxtr_author_font %>\fontspec{<< doxtr_author_font >>}<% endif %>}
+<% endif %>
+
+<% if doxtr_date_font or doxtr_date_color or doxtr_date_size %>
+\addtokomafont{date}{<% if doxtr_date_color %>\color{dddatecolor}<% endif %><% if doxtr_date_size %><< doxtr_date_size >><% endif %><% if doxtr_date_font %>\fontspec{<< doxtr_date_font >>}<% endif %>}
+<% endif %>
+
+%% Custom element for Release Version
+\newkomafont{releaseversion}{}
+<% if doxtr_release_version_font or doxtr_release_version_color or doxtr_release_version_size %>
+\addtokomafont{releaseversion}{<% if doxtr_release_version_color %>\color{ddreleaseversioncolor}<% endif %><% if doxtr_release_version_size %><< doxtr_release_version_size >><% endif %><% if doxtr_release_version_font %>\fontspec{<< doxtr_release_version_font >>}<% endif %>}
+<% endif %>
+
+<% if doxtr_chapter_font or doxtr_chapter_color or doxtr_chapter_size %>
+\addtokomafont{chapter}{<% if doxtr_chapter_color %>\color{ddchaptercolor}<% endif %><% if doxtr_chapter_size %><< doxtr_chapter_size >><% endif %><% if doxtr_chapter_font %>\fontspec{<< doxtr_chapter_font >>}<% endif %>}
+<% endif %>
+
+<% if doxtr_section_font or doxtr_section_color or doxtr_section_size %>
+\addtokomafont{section}{<% if doxtr_section_color %>\color{ddsectioncolor}<% endif %><% if doxtr_section_size %><< doxtr_section_size >><% endif %><% if doxtr_section_font %>\fontspec{<< doxtr_section_font >>}<% endif %>}
+<% endif %>
+
+<% if doxtr_subsection_font or doxtr_subsection_color or doxtr_subsection_size %>
+\addtokomafont{subsection}{<% if doxtr_subsection_color %>\color{ddsubsectioncolor}<% endif %><% if doxtr_subsection_size %><< doxtr_subsection_size >><% endif %><% if doxtr_subsection_font %>\fontspec{<< doxtr_subsection_font >>}<% endif %>}
+<% endif %>
+
+<% if doxtr_subsubsection_font or doxtr_subsubsection_color or doxtr_subsubsection_size %>
+\addtokomafont{subsubsection}{<% if doxtr_subsubsection_color %>\color{ddsubsubsectioncolor}<% endif %><% if doxtr_subsubsection_size %><< doxtr_subsubsection_size >><% endif %><% if doxtr_subsubsection_font %>\fontspec{<< doxtr_subsubsection_font >>}<% endif %>}
+<% endif %>
+
+\newkomafont{chapternumber}{}
+<% if doxtr_chapter_number_font or doxtr_chapter_number_color or doxtr_chapter_number_size %>
+\addtokomafont{chapternumber}{<% if doxtr_chapter_number_color %>\color{ddchapternumbercolor}<% endif %><% if doxtr_chapter_number_size %><< doxtr_chapter_number_size >><% endif %><% if doxtr_chapter_number_font %>\fontspec{<< doxtr_chapter_number_font >>}<% endif %>}
+<% endif %>
+
+\newkomafont{sectionnumber}{}
+<% if doxtr_section_number_font or doxtr_section_number_color or doxtr_section_number_size %>
+\addtokomafont{sectionnumber}{<% if doxtr_section_number_color %>\color{ddsectionnumbercolor}<% endif %><% if doxtr_section_number_size %><< doxtr_section_number_size >><% endif %><% if doxtr_section_number_font %>\fontspec{<< doxtr_section_number_font >>}<% endif %>}
+<% endif %>
+
+\newkomafont{subsectionnumber}{}
+<% if doxtr_subsection_number_font or doxtr_subsection_number_color or doxtr_subsection_number_size %>
+\addtokomafont{subsectionnumber}{<% if doxtr_subsection_number_color %>\color{ddsubsectionnumbercolor}<% endif %><% if doxtr_subsection_number_size %><< doxtr_subsection_number_size >><% endif %><% if doxtr_subsection_number_font %>\fontspec{<< doxtr_subsection_number_font >>}<% endif %>}
+<% endif %>
+
+\newkomafont{subsubsectionnumber}{}
+<% if doxtr_subsubsection_number_font or doxtr_subsubsection_number_color or doxtr_subsubsection_number_size %>
+\addtokomafont{subsubsectionnumber}{<% if doxtr_subsubsection_number_color %>\color{ddsubsubsectionnumbercolor}<% endif %><% if doxtr_subsubsection_number_size %><< doxtr_subsubsection_number_size >><% endif %><% if doxtr_subsubsection_number_font %>\fontspec{<< doxtr_subsubsection_number_font >>}<% endif %>}
+<% endif %>
+
+%% Failsafe for lower KOMA hooks to prevent crash if undefined
+\newkomafont{paragraphnumber}{}
+\newkomafont{subparagraphnumber}{}
+
+%% Redefine Sphinx Rubric mapping to inject custom styling
+<% if doxtr_rubric_font or doxtr_rubric_color or doxtr_rubric_size %>
+\makeatletter
+\renewcommand{\sphinxrubric}[1]{%
+  \subsubsection*{%
+    <% if doxtr_rubric_color %>\color{ddrubriccolor}<% endif %>%
+    <% if doxtr_rubric_size %><< doxtr_rubric_size >><% endif %>%
+    <% if doxtr_rubric_font %>\fontspec{<< doxtr_rubric_font >>}<% endif %>%
+    #1%
+  }%
+}
+\makeatother
+<% endif %>
+
+%% Hook into Sphinx's title elements to force KOMA font injection onto the Sphinx title page
+\makeatletter
+\let\orig@title\title
+
+%% The Title is now purely the Title. Subtitles must be handled by the Title Page Template!
+\renewcommand{\title}[1]{\orig@title{\texorpdfstring{\usekomafont{title}#1}{#1}}}
+
+\let\orig@author\author
+\renewcommand{\author}[1]{\orig@author{\texorpdfstring{\usekomafont{author}#1}{#1}}}
+
+\let\orig@date\date
+\renewcommand{\date}[1]{\orig@date{\texorpdfstring{\usekomafont{date}#1}{#1}}}
+
+<% if doxtr_show_release %>
+% Sphinx splits the release line into two macros: \releasename ("Release") and \version ("0.0.1").
+% We apply the komafont to both so the entire line matches.
+\let\orig@release\release
+\renewcommand{\release}[1]{\orig@release{\texorpdfstring{\usekomafont{releaseversion}#1}{#1}}}
+
+\AtBeginDocument{
+  \@ifundefined{releasename}{}{%
+    \let\orig@releasename\releasename
+    \renewcommand{\releasename}{\texorpdfstring{\usekomafont{releaseversion}\orig@releasename}{\orig@releasename}}
+  }
+}
+<% else %>
+% User disabled the release text entirely for PDF!
+\renewcommand{\release}[1]{}
+\AtBeginDocument{
+  \@ifundefined{releasename}{}{\renewcommand{\releasename}{}}
+}
+<% endif %>
+\makeatother
+
+%% Force KOMA-Script to actively use the split partnumber elements for the "Part X" string.
+%% This MUST happen \AtBeginDocument so that Babel/Polyglossia language localizations dont overwrite it!
+\makeatletter
+\AtBeginDocument{
+  \@ifundefined{partformat}{}{%
+    \renewcommand*{\partformat}{{\usekomafont{partnumberpart}\partname\nobreakspace}{\usekomafont{partnumbernumber}\thepart\autodot}}
+  }
+}
+\makeatother
+
+%% ----------------------------------------------------
+%% DYNAMIC HEADING ALIGNMENT & MARGIN FORMATTING
+%% ----------------------------------------------------
+\makeatletter
+
+\def\doxtr@drawline#1#2{%
+  \smash{\textcolor{#1}{\rule[-1ex]{2pt}{#2}}}%
+}
+
+%% Strip KOMA formatting artifacts so we have total layout control
+\renewcommand*{\chapterformat}{\usekomafont{chapternumber}\thechapter\autodot}
+\renewcommand*{\sectionformat}{\usekomafont{sectionnumber}\thesection\autodot}
+\renewcommand*{\subsectionformat}{\usekomafont{subsectionnumber}\thesubsection\autodot}
+\renewcommand*{\subsubsectionformat}{\usekomafont{subsubsectionnumber}\thesubsubsection\autodot}
+
+%% --------- CHAPTER ALIGNMENT LOGIC ---------
+\def\doxtr@chapter@align@right#1#2#3{%
+<% if doxtr_chapter_number_margin %>
+  \makebox[\textwidth][r]{%
+    \parbox[b]{\dimexpr\textwidth-<< doxtr_chapter_margin_space >>\relax}{\raggedleft\usekomafont{chapter}#3}%
+    \hspace{<< doxtr_chapter_margin_space >>}%
+    \makebox[0pt][l]{<% if doxtr_chapter_number_line %>\doxtr@drawline{ddchapterlinecolor}{<< doxtr_chapter_line_height >>}<% endif %>\hspace{\marginparsep}#2}%
+  }%
+<% else %>
+  \raggedleft\usekomafont{chapter}#2\enskip#3%
+<% endif %>
+}
+\def\doxtr@chapter@align@left#1#2#3{%
+<% if doxtr_chapter_number_margin %>
+  \makebox[\textwidth][l]{%
+    \makebox[0pt][r]{#2\hspace{\marginparsep}<% if doxtr_chapter_number_line %>\doxtr@drawline{ddchapterlinecolor}{<< doxtr_chapter_line_height >>}<% endif %>}%
+    \hspace{<< doxtr_chapter_margin_space >>}%
+    \parbox[b]{\dimexpr\textwidth-<< doxtr_chapter_margin_space >>\relax}{\raggedright\usekomafont{chapter}#3}%
+  }%
+<% else %>
+  \raggedright\usekomafont{chapter}#2\enskip#3%
+<% endif %>
+}
+\def\doxtr@chapter@align@alternate#1#2#3{\Ifthispageodd{\doxtr@chapter@align@right{#1}{#2}{#3}}{\doxtr@chapter@align@left{#1}{#2}{#3}}}
+
+<% if doxtr_chapter_align == 'left' %>
+  \renewcommand*\chapterlinesformat[3]{\Ifstr{#1}{chapter}{\doxtr@chapter@align@left{#1}{#2}{#3}}{\@hangfrom{#2}{#3}}}
+<% elif doxtr_chapter_align == 'right' %>
+  \renewcommand*\chapterlinesformat[3]{\Ifstr{#1}{chapter}{\doxtr@chapter@align@right{#1}{#2}{#3}}{\@hangfrom{#2}{#3}}}
+<% else %>
+  \renewcommand*\chapterlinesformat[3]{\Ifstr{#1}{chapter}{\doxtr@chapter@align@alternate{#1}{#2}{#3}}{\@hangfrom{#2}{#3}}}
+<% endif %>
+
+%% --------- SECTION ALIGNMENT LOGIC ---------
+<% for el in ['section', 'subsection', 'subsubsection'] %>
+
+  <% if v['doxtr_' ~ el ~ '_line_color'] %>
+    \definecolor{dd<< el >>linecolor}{cmyk}{<< v['doxtr_' ~ el ~ '_line_color'] >>}
+  <% else %>
+    \colorlet{dd<< el >>linecolor}{dd<< el >>numbercolor!45}
+  <% endif %>
+
+  \def\doxtr@<< el >>@align@right#1#2#3#4{%
+  <% if v['doxtr_' ~ el ~ '_number_margin'] %>
+    \makebox[\textwidth][r]{%
+      \parbox[b]{\dimexpr\textwidth-<< v['doxtr_' ~ el ~ '_margin_space'] >>\relax}{\raggedleft\usekomafont{#1}#4}%
+      \hspace{<< v['doxtr_' ~ el ~ '_margin_space'] >>}%
+      \makebox[0pt][l]{<% if v['doxtr_' ~ el ~ '_number_line'] %>\doxtr@drawline{dd<< el >>linecolor}{<< v['doxtr_' ~ el ~ '_line_height'] >>}<% endif %>\hspace{\marginparsep}#3}%
+    }%
+  <% else %>
+    \raggedleft #3\enskip#4%
+  <% endif %>
+  }
+  
+  \def\doxtr@<< el >>@align@left#1#2#3#4{%
+  <% if v['doxtr_' ~ el ~ '_number_margin'] %>
+    \makebox[\textwidth][l]{%
+      \makebox[0pt][r]{#3\hspace{\marginparsep}<% if v['doxtr_' ~ el ~ '_number_line'] %>\doxtr@drawline{dd<< el >>linecolor}{<< v['doxtr_' ~ el ~ '_line_height'] >>}<% endif %>}%
+      \hspace{<< v['doxtr_' ~ el ~ '_margin_space'] >>}%
+      \parbox[b]{\dimexpr\textwidth-<< v['doxtr_' ~ el ~ '_margin_space'] >>\relax}{\raggedright\usekomafont{#1}#4}%
+    }%
+  <% else %>
+    \raggedright #3\enskip#4%
+  <% endif %>
+  }
+  
+  \def\doxtr@<< el >>@align@alternate#1#2#3#4{\Ifthispageodd{\doxtr@<< el >>@align@right{#1}{#2}{#3}{#4}}{\doxtr@<< el >>@align@left{#1}{#2}{#3}{#4}}}
+
+  <% if v['doxtr_' ~ el ~ '_align'] == 'left' %>
+    \expandafter\def\csname doxtr@align@<< el >>\endcsname{\doxtr@<< el >>@align@left}
+  <% elif v['doxtr_' ~ el ~ '_align'] == 'right' %>
+    \expandafter\def\csname doxtr@align@<< el >>\endcsname{\doxtr@<< el >>@align@right}
+  <% else %>
+    \expandafter\def\csname doxtr@align@<< el >>\endcsname{\doxtr@<< el >>@align@alternate}
+  <% endif %>
+
+<% endfor %>
+
+\KOMAoption{numbers}{noendperiod}
+
+%% ----------------------------------------------------
+%% FIX: Ensure TOC numbering width accommodates deep nesting
+%% e.g., "B.4.21 Threat" — the number "B.4.21" must not
+%% overlap with the section name.
+%% Use KOMA-Script's dynamic width feature so the TOC
+%% automatically expands to fit the widest number.
+%% ----------------------------------------------------
+\RedeclareSectionCommands[tocdynnumwidth,tocdynindent]{chapter,section,subsection,subsubsection}
+\renewcommand\sectionlinesformat[4]{%
+  \needspace{.05\textheight}%
+  \@ifundefined{doxtr@align@#1}{%
+    \@hangfrom{#3}{#4}%
+  }{%
+    \@nameuse{doxtr@align@#1}{#1}{#2}{#3}{#4}%
+  }%
+}
+\makeatother
+
+%%% Style chapters
+
+% Map Sphinx's "normal" style to "scrheadings" to prevent crashes
+\makeatletter
+\let\ps@normal\ps@scrheadings
+\makeatother
+
+% Fix Arrow in menuselection commands, as some fonts cannot handle that
+% 1. Define a helper to split the string at the '‣' character
+\makeatletter
+\def\my@menu@split#1‣#2\@nil{%
+  \if\relax\detokenize{#2}\relax
+    #1% No more arrows found
+  \else
+    #1 \ensuremath{\rightarrow} \my@menu@split#2\@nil
+  \fi
+}
+
+% 2. Redefine the Sphinx menu selection command
+\DeclareRobustCommand{\sphinxmenuselection}[1]{%
+  \textsf{\textit{\my@menu@split#1‣\@nil}}%
+}
+\makeatother
+
+
+%% ----------------------------------------------------
+%% DYNAMIC CAPTION ROUTER (FIGURES VS TABLES)
+%% ----------------------------------------------------
+\makeatletter
+\let\dd@orig@makecaption\@makecaption
+\long\def\@makecaption#1#2{%
+    \def\dd@temp@type{\@captype}%
+    \def\dd@type@table{table}%
+    \def\dd@type@figure{figure}%
+    \ifx\dd@temp@type\dd@type@table
+        \@ifundefined{dd@makecaption@table}{%
+            \dd@orig@makecaption{#1}{#2}%
+        }{%
+            \dd@makecaption@table{#1}{#2}%
+        }%
+    \else\ifx\dd@temp@type\dd@type@figure
+        \@ifundefined{dd@makecaption@figure}{%
+            \dd@orig@makecaption{#1}{#2}%
+        }{%
+            \dd@makecaption@figure{#1}{#2}%
+        }%
+    \else
+        \dd@orig@makecaption{#1}{#2}%
+    \fi\fi
+}
+\makeatother
+
+
+%% ----------------------------------------------------
+%% DYNAMIC SPHINX ADMONITION ROUTER
+%% ----------------------------------------------------
+
+%% 1. Register generated colors and fonts
+<% for t in admon_types %>
+  \definecolor{ddadmon@<< t >>@titlebg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_title_background_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@iconboxbg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_title_icon_box_background_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@contentbg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_content_background_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@contentbgnested}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_content_background_color_nested_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@titlefg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_title_font_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@contentfg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_content_font_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@iconfg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_title_icon_color_cmyk'] >>}
+
+  \expandafter\def\csname ddadmon@<< t >>@titlefont\endcsname{<% if v['doxtr_admonition_' ~ t ~ '_title_font'] %>\fontspec{<< v['doxtr_admonition_' ~ t ~ '_title_font'] >>}<% endif %><< v['doxtr_admonition_' ~ t ~ '_title_font_size'] >>}
+  \expandafter\def\csname ddadmon@<< t >>@contentfont\endcsname{<% if v['doxtr_admonition_' ~ t ~ '_content_font'] %>\fontspec{<< v['doxtr_admonition_' ~ t ~ '_content_font'] >>}<% endif %><< v['doxtr_admonition_' ~ t ~ '_content_font_size'] >>}
+  \expandafter\def\csname ddadmon@<< t >>@iconsize\endcsname{<< v['doxtr_admonition_' ~ t ~ '_title_icon_size'] >>}
+  \expandafter\def\csname ddadmon@<< t >>@icon\endcsname{<< v['doxtr_admonition_' ~ t ~ '_title_icon'] >>}
+  \expandafter\def\csname ddadmon@<< t >>@iconpad\endcsname{<< v['doxtr_admonition_' ~ t ~ '_title_icon_padding'] >>}
+  \expandafter\def\csname ddadmon@<< t >>@decospace\endcsname{<< v['doxtr_admonition_' ~ t ~ '_title_decoration_spacing'] >>}
+  \expandafter\def\csname ddadmon@<< t >>@beforeskip\endcsname{<< v['doxtr_admonition_' ~ t ~ '_before_skip'] >>}
+  \expandafter\def\csname ddadmon@<< t >>@afterskip\endcsname{<< v['doxtr_admonition_' ~ t ~ '_after_skip'] >>}
+<% endfor %>
+
+\makeatletter
+%% 2. Define the reusable Admonition environments (Users define \newenvironment{ddadmonbox@stylename}[2])
+<% for style_name, style_content in doxtr_loaded_admon_styles.items() %>
+<< style_content >>
+<% endfor %>
+
+%% 3. Map admonition types to their assigned structural styles
+<% for t in admon_types %>
+\expandafter\def\csname ddadmonstylemap@<< t >>\endcsname{<< doxtr_admon_styles_map[t] >>}
+<% endfor %>
+
+%% 4. Hook into Sphinx's master admonition macro with a Dynamic Environment Router
+\newenvironment{doxtradmonboxrouter}[2]{%
+    \def\myadmontype{#1}%
+    \@ifundefined{ddadmonstylemap@\myadmontype}{\def\myadmontype{generic}}{}%
+    % Look up the structural geometry mapped to this admonition type
+    \edef\mystyle{\csname ddadmonstylemap@\myadmontype\endcsname}%
+    % Dynamically save the correct \end{...} command
+    \edef\endrouter{\noexpand\end{ddadmonbox@\mystyle}}%
+    % Forcefully expand the style and type strings BEFORE starting the environment
+    % to protect the variables from dying during tcolorbox rendering!
+    \begingroup\edef\x{\endgroup\noexpand\begin{ddadmonbox@\mystyle}{\myadmontype}}\x{#2}%
+}{%
+    \endrouter
+}
+
+\renewenvironment{sphinxadmonition}[2]{%
+    \begin{doxtradmonboxrouter}{#1}{#2}%
+}{%
+  \end{doxtradmonboxrouter}%
+}
+
+%% Hook into Sphinx's type-specific admonition environments that bypass sphinxadmonition
+%% (e.g., 'seealso' uses its own 'sphinxseealso' environment instead of 'sphinxadmonition')
+\renewenvironment{sphinxseealso}[1]{%
+    \begin{doxtradmonboxrouter}{seealso}{#1}%
+}{%
+  \end{doxtradmonboxrouter}%
+}
+\makeatother
+
+
+%% ----------------------------------------------------
+%% DYNAMIC TCOLORBOX CONTAINERS (STYLEBOX)
+%% ----------------------------------------------------
+
+<% if doxtr_loaded_title_styles %>
+\makeatletter
+\tcbset{<% for style_name, style_content in doxtr_loaded_title_styles.items() %>doxtr<< style_name >>style/.style={<< style_content >>}<% if not loop.last %>,<% endif %><% endfor %>}
+\makeatother
+<% endif %>
+
+<% if doxtr_rendered_containers %>
+\makeatletter
+<% for container_tex in doxtr_rendered_containers %>
+<< container_tex >>
+<% endfor %>
+\makeatother
+<% endif %>
+
+%% ----------------------------------------------------
+%% DYNAMIC TABLES
+%% ----------------------------------------------------
+<% if doxtr_rendered_tables %>
+<< doxtr_rendered_tables >>
+<% endif %>
+
+
+%% ----------------------------------------------------
+%% DYNAMIC FIGURES
+%% ----------------------------------------------------
+<% if doxtr_rendered_figures %>
+<< doxtr_rendered_figures >>
+<% endif %>
+
+
+%% ----------------------------------------------------
+%% DYNAMIC SPHINX-NEEDS STYLING
+%% ----------------------------------------------------
+<% if 'sphinx_needs' in extensions %>
+\makeatletter
+
+%% 1. Register generated colors and fonts
+<% for t in need_types %>
+  \definecolor{ddneed@<< t >>@titlebg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_title_background_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@titlefg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_title_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@iconfg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_title_icon_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@metabg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_metadata_background_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@metafg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_metadata_font_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@metakeyfg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_metadata_key_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@contentbg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_content_background_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@contentfg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_content_font_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@seglinefg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_segmentation_color_cmyk'] >>}
+
+  \expandafter\def\csname ddneed@<< t >>@titlefont\endcsname{<% if v['doxtr_need_' ~ t ~ '_title_font'] %>\fontspec{<< v['doxtr_need_' ~ t ~ '_title_font'] >>}<% endif %><< v['doxtr_need_' ~ t ~ '_title_font_size'] >>}
+  \expandafter\def\csname ddneed@<< t >>@metafont\endcsname{<% if v['doxtr_need_' ~ t ~ '_metadata_font'] %>\fontspec{<< v['doxtr_need_' ~ t ~ '_metadata_font'] >>}<% endif %><< v['doxtr_need_' ~ t ~ '_metadata_font_size'] >>}
+  \expandafter\def\csname ddneed@<< t >>@metakeyfont\endcsname{<% if v['doxtr_need_' ~ t ~ '_metadata_key_font'] %>\fontspec{<< v['doxtr_need_' ~ t ~ '_metadata_key_font'] >>}<% endif %><< v['doxtr_need_' ~ t ~ '_metadata_key_font_size'] >>\color{ddneed@<< t >>@metakeyfg}\bfseries}
+  \expandafter\def\csname ddneed@<< t >>@contentfont\endcsname{<% if v['doxtr_need_' ~ t ~ '_content_font'] %>\fontspec{<< v['doxtr_need_' ~ t ~ '_content_font'] >>}<% endif %><< v['doxtr_need_' ~ t ~ '_content_font_size'] >>}
+  
+  \expandafter\def\csname ddneed@<< t >>@iconcmd\endcsname{<% if v['doxtr_need_' ~ t ~ '_title_icon'] %>\raisebox{<< v['doxtr_need_' ~ t ~ '_icon_raise_math'] >>}{{<< v['doxtr_need_' ~ t ~ '_title_icon_size'] >>\color{ddneed@<< t >>@iconfg}<< v['doxtr_need_' ~ t ~ '_title_icon'] >>}}\hspace{0.5em}<% endif %>}
+  \expandafter\def\csname ddneed@<< t >>@beforeskip\endcsname{<< v['doxtr_need_' ~ t ~ '_before_skip'] >>}
+  \expandafter\def\csname ddneed@<< t >>@afterskip\endcsname{<< v['doxtr_need_' ~ t ~ '_after_skip'] >>}
+  \expandafter\def\csname ddneed@<< t >>@segstyle\endcsname{<< v['doxtr_need_' ~ t ~ '_segmentation_style'] >>}
+<% endfor %>
+
+%% 2. Load custom need templates
+<% for style_name, style_content in doxtr_loaded_need_styles.items() %>
+<< style_content >>
+<% endfor %>
+
+%% 3. Map need types to their assigned structural styles
+<% for t in need_types %>
+\expandafter\def\csname ddneedstylemap@<< t >>\endcsname{<< doxtr_need_styles_map[t] >>}
+<% endfor %>
+
+%% 4. The Dynamic Needs Router
+\newenvironment{doxtrneedboxrouter}[2]{%
+    \def\myneedtype{#1}%
+    \@ifundefined{ddneedstylemap@\myneedtype}{\def\myneedtype{generic}}{}%
+    \edef\mystyle{\csname ddneedstylemap@\myneedtype\endcsname}%
+    \edef\endrouter{\noexpand\end{ddneedbox@\mystyle}}%
+    % Override \needsmetakey locally so the Sphinx-Needs inner content uses the exact fonts for this type!
+    \def\needsmetakey##1{{\csname ddneed@\myneedtype @metakeyfont\endcsname ##1}}%
+    \begingroup\edef\x{\endgroup\noexpand\begin{ddneedbox@\mystyle}{\myneedtype}}\x{#2}%
+}{%
+    \endrouter
+}
+
+\makeatother
+<% endif %>

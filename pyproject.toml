@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doxtr-pdf-theme-core"
+dynamic = ["version"]
+authors = [{ name="Jens Frey" }]
+description = "Core PDF layout engine and AST flatteners for Doxtr themes."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "sphinx>=5.0",
+    "Jinja2>=3.0"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Framework :: Sphinx :: Extension",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/doxtr/doxtr-pdf-theme-core"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["doxtr_pdf_theme_core*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "doxtr_pdf_theme_core.__version__"}
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+doxtr_pdf_theme_core = [
+    "*.tex_t", 
+    "latex_styles/*.sty",
+    "latex_styles/**/*.tex_t",
+    "assets/*.png",
+    "assets/*.jpg",
+    "assets/*.pdf" # <-- (Optional) Vector logos
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test_harness"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["doxtr_pdf_theme_core"]
+omit = ["*/test_*", "*/conf*.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 60

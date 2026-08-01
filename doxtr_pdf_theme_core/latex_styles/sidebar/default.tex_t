@@ -1,0 +1,54 @@
+<# Default sidebar style template — a styled tcolorbox that replaces Sphinx's sphinxsidebar environment.
+   Uses wrapfigure so that subsequent text flows around the sidebar box.
+   The AST processor (process_sidebar_ast) generates the wrapfigure + wrapping text
+   directly to avoid blank lines between \end{wrapfigure} and text.
+   The title background spans full width edge-to-edge, following the rounded frame geometry. #>
+
+\usepackage{wrapfig}
+
+\definecolor{ddsidebartitlebg}{cmyk}{<< s_conf.title_background_color_cmyk >>}
+\definecolor{ddsidebartitlefg}{cmyk}{<< s_conf.title_font_color_cmyk >>}
+\definecolor{ddsidebariconfg}{cmyk}{<< s_conf.title_icon_color_cmyk >>}
+\definecolor{ddsidebarcontentbg}{cmyk}{<< s_conf.content_background_color_cmyk >>}
+\definecolor{ddsidebarcontentfg}{cmyk}{<< s_conf.content_font_color_cmyk >>}
+\definecolor{ddsidebarborder}{cmyk}{<< s_conf.border_color_cmyk >>}
+\definecolor{ddsidebarsubtitlefg}{cmyk}{<< s_conf.subtitle_font_color_cmyk >>}
+
+\makeatletter
+%% Sidebar position and width commands (used by the AST-generated wrapfigure)
+\newcommand{\ddsidebarposition}{<< s_conf.float_position >>}
+\newcommand{\ddsidebarwidth}{<< s_conf.width >>}
+
+%% Inner box for sidebar content (used inside wrapfigure)
+\newenvironment{ddsidebarinnerbox}{%
+  \begin{tcolorbox}[enhanced, parbox=false, sharp corners=south, rounded corners=north, arc=<< s_conf.border_radius >>, colback=ddsidebarcontentbg, coltext=ddsidebarcontentfg, colframe=ddsidebarborder, boxrule=<< s_conf.border_width >>, fontupper=<% if s_conf.content_font %>\fontspec{<< s_conf.content_font >>}<% endif %><< s_conf.content_font_size >>, boxsep=0pt, left=0pt, right=0pt, top=0pt, bottom=0.5em, before skip=0pt, after skip=0pt]%
+}{%
+  \end{tcolorbox}%
+}
+
+%% Fallback: if Sphinx renders the sidebar directly (without AST processing),
+%% this environment ensures it still renders (just without text wrapping).
+\renewenvironment{sphinxsidebar}{%
+  \begin{wrapfigure}{\ddsidebarposition}{\ddsidebarwidth}%
+  \begin{ddsidebarinnerbox}%
+}{%
+  \end{ddsidebarinnerbox}%
+  \end{wrapfigure}%
+}
+
+%% Sidebar title command — full-width title row with background color.
+\renewcommand*\sphinxstylesidebartitle[1]{%
+  \begin{tcolorbox}[nobeforeafter, sharp corners=south, rounded corners=north, arc=\dimexpr << s_conf.border_radius >> - << s_conf.border_width >>\relax, boxrule=0pt, colback=ddsidebartitlebg, colframe=ddsidebartitlebg, coltext=ddsidebartitlefg, boxsep=0pt, left=0.75em, right=0.75em, top=0.6em, bottom=0.6em]%
+    <% if s_conf.title_font %>\fontspec{<< s_conf.title_font >>}<% endif %><< s_conf.title_font_size >>%
+    <% if s_conf.title_icon %>{\color{ddsidebariconfg}<< s_conf.title_icon >>}\hspace{0.5em}<% endif %>%
+    #1%
+  \end{tcolorbox}%
+  \nobreak\vskip 0.5em\relax
+  \leftskip=0.75em\rightskip=0.75em\relax
+}
+
+%% Sidebar subtitle command with custom styling
+\renewcommand*\sphinxstylesidebarsubtitle[1]{%
+  \sphinxAtStartPar{\color{ddsidebarsubtitlefg}<% if s_conf.subtitle_font %>\fontspec{<< s_conf.subtitle_font >>}<% endif %><< s_conf.subtitle_font_size >>#1}\par\medskip
+}
+\makeatother

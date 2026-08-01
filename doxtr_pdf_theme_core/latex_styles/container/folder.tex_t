@@ -1,0 +1,51 @@
+<# Folder container style
+   - Custom frame: folder shape with a tab extending from the top-right corner
+   - Rounded corners on the outer path (2pt radius)
+   - Drop fuzzy shadow for depth
+   - Title displayed inside the tab area (top-right, boxed title)
+   - Configurable colors, fonts, frame, shadow, and title positioning
+#>
+\definecolor{ddfoldercfg<< c_name >>}{cmyk}{<< c_conf.content_font_color_cmyk >>}
+\definecolor{ddfoldercbg<< c_name >>}{cmyk}{<< c_conf.content_background_color_cmyk >>}
+\definecolor{ddfoldertfg<< c_name >>}{cmyk}{<< c_conf.title_font_color_cmyk >>}
+\definecolor{ddfoldertbg<< c_name >>}{cmyk}{<< c_conf.title_background_color_cmyk >>}
+\definecolor{ddfolderframe<< c_name >>}{cmyk}{<< c_conf.title_color_cmyk >>}
+\definecolor{ddfoldershadow<< c_name >>}{cmyk}{<< c_conf.shadow_color_cmyk >>}
+
+<# Icon command for the title #>
+\expandafter\def\csname ddconticon<< c_name >>\endcsname{<% if c_conf.title_icon %>{<< c_conf.title_icon_font_size >>\color{ddfoldertfg<< c_name >>}<< c_conf.title_icon >>}\hspace{0.5em}<% endif %>}
+
+<# Empty title style definition - folder style handles titles via custom frame code #>
+\tcbset{ddcontainertitlestyle<< c_name >>/.style={}}
+
+\newtcolorbox{ddcontainer<< c_name >>}[1][]{enhanced, breakable, parbox=false,
+  before skip=<< c_conf.before_skip >>,
+  after skip=<< c_conf.after_skip >>,
+  colback=ddfoldercbg<< c_name >>,
+  coltext=ddfoldercfg<< c_name >>,
+  colframe=ddfolderframe<< c_name >>,
+  colbacktitle=ddfoldertbg<< c_name >>,
+  coltitle=ddfoldertfg<< c_name >>,
+  fontupper=<% if c_conf.content_font %>\fontspec{<< c_conf.content_font >>}<% endif %><< c_conf.content_font_size >>,
+  fonttitle=<% if c_conf.title_font %>\fontspec{<< c_conf.title_font >>}<% endif %><< c_conf.title_font_size >>,
+  boxrule=0mm,
+  <% if c_conf.show_shadow %>
+  drop fuzzy shadow=ddfoldershadow<< c_name >>,
+  <% endif %>
+  left=1.5em, right=1.5em, top=1.5em, bottom=1.5em,
+  <% if c_conf.match_text_width %>
+  grow to left by=\dimexpr 1.5em\relax,
+  grow to right by=\dimexpr 1.5em\relax,
+  <% endif %>
+  attach boxed title to top right=
+    {yshift=-0.25mm-\tcboxedtitleheight/2,yshifttext=2mm-\tcboxedtitleheight/2},
+  boxed title style={empty,arc=0pt,outer arc=0pt,boxrule=0pt},
+  frame code={
+    \draw[ddfolderframe<< c_name >>,rounded corners=2pt,line width=<< c_conf.border_width >>]
+      let \p1=($(title.north)-(frame.north)$) in
+      (title.north) -- (title.north west) -- ++ (-\y1+0.2pt,-\y1+0.2pt) -|
+      ([xshift=-0.2pt,yshift=-0.2pt]frame.south west) -|
+      ([xshift=0.2pt]frame.east) |-
+      ([xshift=1em]title.north) [rounded corners=0pt] -- cycle;
+  },
+  #1}
