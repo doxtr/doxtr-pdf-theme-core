@@ -139,6 +139,14 @@ def build_latex_for_feature(feature_name: str, clean: bool = False) -> tuple[Pat
         shutil.rmtree(BUILD_DIR)
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Always wipe the doctrees cache between feature builds. Each feature uses a
+    # different conf.py, and Sphinx's incremental build will reuse stale cached
+    # AST nodes from a prior feature if doctrees are not cleared, causing missing
+    # LaTeX output for newly-registered config values (e.g. doxtr_container_mapping).
+    doctrees_dir = BUILD_DIR / ".doctrees"
+    if doctrees_dir.exists():
+        shutil.rmtree(doctrees_dir)
+
     # Generate a temporary conf.py with ONLY this feature's overrides
     base_conf = (HARNESS_DIR / "conf.py").read_text(encoding="utf-8")
 
