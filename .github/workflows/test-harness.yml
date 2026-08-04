@@ -34,7 +34,9 @@ jobs:
             -w /workspaces/docs \
             doxtr/reactor:0.0.5 \
             bash -c '
+              pip uninstall doxtr-pdf-theme-core -y 2>/dev/null || true &&
               pip install -e /workspaces/docs &&
+              python -c "import doxtr_pdf_theme_core; print(\"Theme version:\", doxtr_pdf_theme_core.__version__, doxtr_pdf_theme_core.__file__)" &&
               cd test_harness &&
               python test_runner.py --fail-on-pending
             '
