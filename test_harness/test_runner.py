@@ -147,6 +147,13 @@ def build_latex_for_feature(feature_name: str, clean: bool = False) -> tuple[Pat
     if doctrees_dir.exists():
         shutil.rmtree(doctrees_dir)
 
+    # Also delete the output .tex file so Sphinx always writes a fresh one.
+    # Without this, Sphinx may skip writing if it considers the output up-to-date
+    # even after the doctrees were cleared.
+    tex_file_early = BUILD_DIR / "doxtr-test-harness.tex"
+    if tex_file_early.exists():
+        tex_file_early.unlink()
+
     # Generate a temporary conf.py with ONLY this feature's overrides
     base_conf = (HARNESS_DIR / "conf.py").read_text(encoding="utf-8")
 
