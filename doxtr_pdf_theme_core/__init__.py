@@ -41,7 +41,7 @@ from .templates import (
 )
 from .config import (
     VALID_KEYS, CORE_ADMONITION_TYPES, validate_config_keys,
-    make_resolve_val_fn, make_merge_section_fn,
+    validate_container_mapping, make_resolve_val_fn, make_merge_section_fn,
 )
 from .ast_processors import (
     process_containers_ast,
@@ -56,7 +56,7 @@ from .ast_processors import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 __all__ = [
     'setup',
@@ -221,6 +221,11 @@ def config_inited(app, config):
     validate_config_keys(getattr(config, 'doxtr_microtype', {}), 'microtype')
     validate_config_keys(getattr(config, 'doxtr_sidebar', {}), 'sidebar')
     validate_config_keys(getattr(config, 'doxtr_highlights', {}), 'highlights')
+    # Validate container mapping: warn about targets that don't exist in containers config.
+    # Pass the already-merged containers dict so theme-defined styles don't generate
+    # false-positive warnings (theme defaults are not visible in config.doxtr_containers
+    # before the merge runs).
+    validate_container_mapping(getattr(config, 'doxtr_container_mapping', {}), containers)
     # Validate nested dict sections only at the 'generic' level
     tables_user = getattr(config, 'doxtr_tables', {})
     if 'generic' in tables_user:
@@ -1062,6 +1067,11 @@ def setup(app):
     # Register the nested dictionary configurations
     for conf_dict in ['title_page', 'headings', 'parts', 'epigraphs', 'draft', 'microtype', 'containers', 'tables', 'figures', 'code', 'admonitions', 'needs', 'sidebar', 'highlights', 'toc', 'bibliography', 'index', 'glossary']:
         app.add_config_value(f'doxtr_{conf_dict}', {}, 'env')
+
+    # Container name mapping: maps RST class names to registered container styles.
+    # Enables theme switching without changing source documents.
+    # Example: doxtr_container_mapping = {"terminal": "lcars-terminal"}
+    app.add_config_value('doxtr_container_mapping', {}, 'env')
 
     app.connect('config-inited', config_inited, priority=900)
     app.connect('build-finished', build_finished)

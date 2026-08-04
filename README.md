@@ -1020,6 +1020,50 @@ doxtr_containers = {
 }
 ```
 
+### `doxtr_container_mapping`
+
+Maps RST container class names to registered `doxtr_containers` style names. This lets you switch themes or rename container styles without touching your source documents.
+
+```python
+doxtr_container_mapping = {
+    "terminal": "lcars-terminal",    # RST class -> theme container style
+    "code-output": "lcars-terminal",  # Multiple classes can point to the same style
+    "my-callout": "note",            # Fall back to any registered container
+}
+```
+
+#### Resolution Order
+
+When a container node is processed, the class name is resolved in this order:
+
+1. **Mapping hit** — if the class is in `doxtr_container_mapping`, the target style name is used.
+2. **Direct match** — if the class exists directly in `doxtr_containers`, it is used as-is (no mapping needed).
+3. **Mapping fallback** — if the mapped target doesn't exist in `doxtr_containers`, the original class is tried.
+4. **Default style** — if nothing matches, the `'default'` container style is used and a warning is emitted.
+
+#### Build-time Validation
+
+During the Sphinx build, if a mapping target doesn't exist in `doxtr_containers`, a warning is emitted:
+
+```
+WARNING: [Doxtr Core] Container mapping 'terminal' -> 'lcars-terminal': target style
+'lcars-terminal' is not defined in doxtr_containers. Will fall back to 'default' at render time.
+```
+
+#### Theme Switching Example
+
+A user writes documentation with `.. container:: terminal` (or `.. stylebox:: terminal`). To switch to an LCARS theme that calls the same style `lcars-terminal`, add to `conf.py`:
+
+```python
+doxtr_container_mapping = {
+    "terminal": "lcars-terminal",
+}
+```
+
+No RST files need to change. The mapping is applied at render time.
+
+---
+
 ### `doxtr_sidebar`
 
 Controls the RST `.. sidebar::` directive. Sidebars float alongside the main text using `wrapfig`.

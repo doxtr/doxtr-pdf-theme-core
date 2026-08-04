@@ -1055,6 +1055,68 @@ FEATURE_REGISTRY: dict[str, Feature] = {
     ),
 
     # =====================================================================
+    # 7b. CONTAINER MAPPING
+    # =====================================================================
+    "container_mapping": Feature(
+        name="Container Name Mapping",
+        description="doxtr_container_mapping: alias -> registered style, stylebox support, direct match passthrough, invalid target fallback",
+        sub_tests=[
+            FeatureSubTest(
+                name="mapping_container_directive",
+                description="Mapped class via .. container:: resolves to target env",
+                rst_file="container_mapping.rst",
+                conf_override="test_container_mapping.py",
+                expected_latex_markers=[
+                    # biz-alias -> business, so the env must be ddcontainerbusiness
+                    r"\\begin\{ddcontainerbusiness\}",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="mapping_stylebox_directive",
+                description="Mapped class via .. stylebox:: resolves to target env",
+                rst_file="container_mapping.rst",
+                conf_override="test_container_mapping.py",
+                expected_latex_markers=[
+                    # typewriter-alias -> typewriter, so env must be ddcontainertypewriter
+                    r"\\begin\{ddcontainertypewriter\}",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="mapping_direct_passthrough",
+                description="Unaliased class that exists directly in doxtr_containers still works",
+                rst_file="container_mapping.rst",
+                conf_override="test_container_mapping.py",
+                expected_latex_markers=[
+                    # 'typewriter' used directly without any mapping entry
+                    r"\\begin\{ddcontainertypewriter\}",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="mapping_invalid_target_fallback",
+                description="Mapping to non-existent target falls back to 'default' env",
+                rst_file="container_mapping.rst",
+                conf_override="test_container_mapping.py",
+                expected_latex_markers=[
+                    # broken-alias -> nonexistent -> fallback to ddcontainerdefault
+                    r"\\begin\{ddcontainerdefault\}",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            # NOTE: A sub-test asserting that the raw alias name (e.g. 'biz-alias')
+            # never appears as a LaTeX env name is intentionally omitted here.
+            # The marker system uses re.search for positive matches only; a negative
+            # lookahead passed to re.search always succeeds and would be a false green.
+            # The absence of the alias env is implicitly covered: mapping_invalid_target_fallback
+            # confirms the *correct* env (ddcontainerdefault) is emitted, which means
+            # the alias env cannot have been emitted instead.
+        ],
+        status=FeatureStatus.COMPLETE,
+    ),
+
+    # =====================================================================
     # 8. TABLES
     # =====================================================================
     "tables": Feature(

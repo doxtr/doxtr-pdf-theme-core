@@ -250,6 +250,105 @@ def test_hex_to_rgb_lowercase():
     assert hex_to_rgb('#ff0000') == (255, 0, 0)
 
 
+# --- resolve_container_class ---
+
+from doxtr_pdf_theme_core.ast_processors.containers import resolve_container_class
+from doxtr_pdf_theme_core.config import validate_container_mapping
+
+_CONTAINERS = {
+    'business': {'style': 'default', 'title': 'Business'},
+    'typewriter': {'style': 'default'},
+    'default': {'style': 'default'},
+}
+
+
+def test_resolve_container_direct_match():
+    """Class name exists directly in containers_conf — no mapping needed."""
+    name, conf = resolve_container_class('business', {}, _CONTAINERS)
+    assert name == 'business'
+    assert conf == _CONTAINERS['business']
+
+
+def test_resolve_container_mapping_hit():
+    """Class name is mapped to a valid registered style."""
+    mapping = {'biz-alias': 'business'}
+    name, conf = resolve_container_class('biz-alias', mapping, _CONTAINERS)
+    assert name == 'business'
+    assert conf == _CONTAINERS['business']
+
+
+def test_resolve_container_mapping_overrides_direct():
+    """A mapped class that also exists directly resolves to the mapped target."""
+    containers = dict(_CONTAINERS)
+    containers['biz-alias'] = {'style': 'default', 'title': 'Direct'}  # direct entry exists
+    mapping = {'biz-alias': 'business'}
+    name, conf = resolve_container_class('biz-alias', mapping, containers)
+    assert name == 'business'  # mapping wins over direct match
+
+
+def test_resolve_container_mapping_invalid_target_original_exists():
+    """Mapped target doesn't exist — falls back to original class if it's registered."""
+    mapping = {'typewriter': 'nonexistent'}
+    name, conf = resolve_container_class('typewriter', mapping, _CONTAINERS)
+    assert name == 'typewriter'
+    assert conf == _CONTAINERS['typewriter']
+
+
+def test_resolve_container_mapping_invalid_target_no_original():
+    """Mapped target doesn't exist and original is also unregistered — falls back to 'default'."""
+    mapping = {'unknown': 'also-unknown'}
+    name, conf = resolve_container_class('unknown', mapping, _CONTAINERS)
+    assert name == 'default'
+    assert conf == _CONTAINERS['default']
+
+
+def test_resolve_container_no_mapping_no_direct_match():
+    """Class is not in mapping and not in containers_conf — falls back to 'default'."""
+    name, conf = resolve_container_class('mystery', {}, _CONTAINERS)
+    assert name == 'default'
+
+
+def test_resolve_container_default_passthrough():
+    """'default' class resolves directly without any mapping."""
+    name, conf = resolve_container_class('default', {}, _CONTAINERS)
+    assert name == 'default'
+
+
+def test_resolve_container_empty_mapping():
+    """Empty mapping dict behaves identically to no mapping."""
+    name, conf = resolve_container_class('business', {}, _CONTAINERS)
+    assert name == 'business'
+
+
+def test_resolve_container_missing_default_key():
+    """When 'default' is absent from containers_conf, fallback returns empty dict."""
+    containers = {'business': {'style': 'default'}}
+    name, conf = resolve_container_class('mystery', {}, containers)
+    assert name == 'default'
+    assert conf == {}  # containers_conf.get('default', {}) returns {}
+
+
+# --- validate_container_mapping ---
+
+
+def test_validate_container_mapping_all_valid(capsys=None):
+    """No warnings when all mapping targets exist in containers."""
+    mapping = {'biz-alias': 'business', 'tw-alias': 'typewriter'}
+    # Should complete without raising; warnings go to Sphinx logger (not captured here)
+    validate_container_mapping(mapping, _CONTAINERS)
+
+
+def test_validate_container_mapping_empty():
+    """Empty mapping produces no warnings."""
+    validate_container_mapping({}, _CONTAINERS)
+
+
+def test_validate_container_mapping_invalid_target():
+    """Mapping with an unregistered target completes without raising."""
+    mapping = {'broken': 'nonexistent'}
+    validate_container_mapping(mapping, _CONTAINERS)  # should not raise
+
+
 # --- Runner ---
 
 def run_all():

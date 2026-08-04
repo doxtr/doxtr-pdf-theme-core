@@ -23,6 +23,7 @@ __all__ = [
     'VALID_NEEDS_KEYS',
     'validate_config_keys',
     'validate_typed_section',
+    'validate_container_mapping',
     'make_resolve_val_fn',
     'make_merge_section_fn',
     'warn_deprecated',
@@ -143,6 +144,26 @@ VALID_NEEDS_KEYS: set = {
     'content_background_color', 'content_font_color', 'content_font_size', 'content_font',
     'before_skip', 'after_skip',
 }
+
+
+def validate_container_mapping(mapping: dict, containers_conf: dict) -> None:
+    """Warn about container mappings whose targets are not defined in doxtr_containers.
+
+    Called during ``config_inited()`` so misconfigurations are surfaced at
+    build time rather than silently falling back to 'default' at render time.
+
+    Args:
+        mapping: The ``doxtr_container_mapping`` dict from ``conf.py``.
+        containers_conf: The *user-supplied* ``doxtr_containers`` dict
+            (pre-merge is fine here — we just want early feedback).
+    """
+    for source, target in mapping.items():
+        if target not in containers_conf:
+            logger.warning(
+                f"[Doxtr Core] Container mapping '{source}' -> '{target}': "
+                f"target style '{target}' is not defined in doxtr_containers. "
+                f"Will fall back to 'default' at render time."
+            )
 
 
 def validate_typed_section(
