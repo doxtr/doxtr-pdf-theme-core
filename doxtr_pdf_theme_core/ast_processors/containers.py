@@ -8,6 +8,7 @@ from docutils import nodes
 from sphinx.util import logging
 
 from ..latex_escape import esc_latex
+from ..core_config import VALID_RENDER_MODES, RenderMode, validate_render_mode
 
 __all__ = ['process_containers_ast', 'resolve_container_class']
 
@@ -139,10 +140,35 @@ def process_containers_ast(app, doctree, docname):
         # Use the resolved style name for the LaTeX environment so that the
         # mapped style's tcolorbox definition is used, not the original class name.
         safe_resolved_name = _RE_SAFE_NAME.sub('', resolved_name)
-        title_str = f"ddcontainertitlestyle{safe_resolved_name}, title={{\\csname ddconticon{safe_resolved_name}\\endcsname {safe_title}}}" if safe_title else "notitle"
+
+        render_mode = c_conf.get('render_mode', RenderMode.TCOLORBOX)
+
+        # Defensive validation — config_inited should have already normalized this,
+        # but themes may mutate config after config_inited runs.
+        render_mode = validate_render_mode(render_mode, safe_resolved_name, logger)
+
+        if render_mode == RenderMode.ENVIRONMENT:
+            # Store title/icon in macros within a TeX group to prevent nested container collisions.
+            # The \begingroup scopes \def so inner containers don't overwrite outer container values.
+            # Emit explicit \ddContainerHasTitle boolean for robust empty-checking in templates.
+            has_title_flag = '\\ddContainerHasTitletrue' if safe_title else '\\ddContainerHasTitlefalse'
+            pre = (
+                f'\\begingroup%\n'
+                f'{has_title_flag}%\n'
+                f'\\def\\ddContainerTitle{{{safe_title}}}%\n'
+                f'\\def\\ddContainerIcon{{\\csname ddconticon{safe_resolved_name}\\endcsname}}%\n'
+            )
+            begin_args = ''
+            post = '\\endgroup%\n'
+        else:
+            # Current tcolorbox behavior (unchanged)
+            title_str = f"ddcontainertitlestyle{safe_resolved_name}, title={{\\csname ddconticon{safe_resolved_name}\\endcsname {safe_title}}}" if safe_title else "notitle"
+            pre = ''
+            begin_args = f'[{title_str}]'
+            post = ''
 
         wrapper = nodes.container(classes=['doxtr-flat-container'])
-        wrapper.append(nodes.raw('', f'\n\\begin{{ddcontainer{safe_resolved_name}}}[{title_str}]\n', format='latex'))
+        wrapper.append(nodes.raw('', f'\n{pre}\\begin{{ddcontainer{safe_resolved_name}}}{begin_args}\n', format='latex'))
         wrapper.extend(node.children)
-        wrapper.append(nodes.raw('', f'\n\\end{{ddcontainer{safe_resolved_name}}}\n', format='latex'))
+        wrapper.append(nodes.raw('', f'\n\\end{{ddcontainer{safe_resolved_name}}}\n{post}', format='latex'))
         node.replace_self(wrapper)

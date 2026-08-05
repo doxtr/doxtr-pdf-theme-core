@@ -28,7 +28,7 @@ from .core_fallbacks import (
     DEFAULT_CONTAINER_STYLE, DEFAULT_TABLE_STYLE, DEFAULT_FIGURE_STYLE,
     DEFAULT_CODE_STYLE, DEFAULT_SIDEBAR_STYLE, DEFAULT_HIGHLIGHTS_STYLE
 )
-from .core_config import CORE_CONFIG_MANIFEST, DOXTR_GLOBALS, DOXTR_SEMANTIC_PALETTE
+from .core_config import CORE_CONFIG_MANIFEST, DOXTR_GLOBALS, DOXTR_SEMANTIC_PALETTE, RenderMode, VALID_RENDER_MODES, validate_render_mode
 
 # Import from new refactored modules (Plan 03)
 from .latex_escape import esc_latex, LATEX_ESCAPE_MAP
@@ -56,7 +56,7 @@ from .ast_processors import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 __all__ = [
     'setup',
@@ -345,7 +345,15 @@ def config_inited(app, config):
             c_conf.setdefault('title_icon_font_size', '')
             c_conf.setdefault('content_font_size', r'\normalsize')
             
+            # Validate and normalize render_mode
+            c_conf.setdefault('render_mode', RenderMode.TCOLORBOX)
+            c_conf['render_mode'] = validate_render_mode(c_conf['render_mode'], c_name, logger)
+
             style_name = c_conf.get('title_style', 'classic')
+            # Title styles are always loaded regardless of render_mode. Environment-mode
+            # containers don't use ddcontainertitlestyle* in the AST output, but the body
+            # template (e.g., default.tex_t) may still reference doxtr_style_requires_arg.
+            # Loading unused styles has negligible cost and prevents KeyError crashes.
             requested_styles.add(style_name)
             c_conf['title_style'] = style_name
             

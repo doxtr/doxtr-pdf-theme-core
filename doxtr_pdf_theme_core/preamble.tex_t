@@ -26,6 +26,12 @@
 % Let's us use: r'\relscale{1.2}' to scale fonts
 \usepackage{relsize}
 
+%% --- Container Render Mode: environment mode support ---
+%% Boolean flag for conditional title rendering in environment-mode containers.
+%% Templates use \ifddContainerHasTitle for robust empty-checking.
+\newif\ifddContainerHasTitle
+\ddContainerHasTitlefalse
+
 %% ----------------------------------------------------
 %% MICROTYPE — Typographic refinement
 %% Only enabled when draft mode is OFF (production builds).

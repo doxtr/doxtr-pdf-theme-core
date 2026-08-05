@@ -22,6 +22,44 @@ def _code_bg(font_color, brand_color):
     """
     return get_highest_contrast_color(font_color, brand_color, target='background', wcag_level=7)
 
+# --- Container Render Mode Constants ---
+# render_mode controls how the container's LaTeX environment is generated:
+#   'tcolorbox' — Title passed via tcolorbox's title={...} option. Template defines
+#                 tcolorbox styling. Best for standard boxed containers.
+#   'environment' — Title stored in macros (\ddContainerTitle, \ddContainerIcon).
+#                   Template defines the full environment structure. Best for complex
+#                   layouts (LCARS, etc.) that need full control over title placement.
+class RenderMode:
+    """Container render mode constants."""
+    TCOLORBOX = 'tcolorbox'
+    ENVIRONMENT = 'environment'
+
+VALID_RENDER_MODES = {RenderMode.TCOLORBOX, RenderMode.ENVIRONMENT}
+
+
+def validate_render_mode(render_mode, container_name, _logger):
+    """Validate and normalize a render_mode value.
+
+    Returns the canonical render_mode string. If the input is invalid,
+    logs a warning and returns the default (tcolorbox).
+
+    Args:
+        render_mode: The render_mode value to validate.
+        container_name: Container name for the warning message context.
+        _logger: A Sphinx logger instance.
+
+    Returns:
+        A valid render_mode string from VALID_RENDER_MODES.
+    """
+    if render_mode not in VALID_RENDER_MODES:
+        _logger.warning(
+            f"[Doxtr Core] Container '{container_name}' has invalid render_mode "
+            f"'{render_mode}'. Valid values: {sorted(VALID_RENDER_MODES)}. Defaulting to 'tcolorbox'."
+        )
+        return RenderMode.TCOLORBOX
+    return render_mode
+
+
 THEME_DIR = os.path.abspath(os.path.dirname(__file__))
 ASSETS_DIR = os.path.join(THEME_DIR, 'assets')
 
@@ -281,6 +319,7 @@ DOXTR_CONTAINERS = {
     'default': {
         'title': '',                     # Static title text (shown when no :title: is given in RST; empty = notitle)
         'title_raw': False,              # If True, title is passed as raw LaTeX without escaping
+        'render_mode': RenderMode.TCOLORBOX,  # 'tcolorbox' or 'environment' — see RenderMode class
         'style': 'default',
         'title_style': 'classic',
         'container_frame': True,

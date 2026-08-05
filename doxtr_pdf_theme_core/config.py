@@ -110,6 +110,7 @@ VALID_CONTAINER_KEYS: set = {
     'title_color', 'title_font_color', 'title_icon_color', 'title_icon_font_size',
     'content_font', 'content_font_size', 'content_font_color',
     'content_background_color', 'before_skip', 'after_skip',
+    'render_mode',
     # participant-specific
     'frame_width', 'frame_arc', 'title_position', 'title_xshift', 'title_max_width',
     # folder-specific

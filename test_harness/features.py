@@ -1797,6 +1797,98 @@ FEATURE_REGISTRY: dict[str, Feature] = {
         ],
         status=FeatureStatus.COMPLETE,
     ),
+
+    # =====================================================================
+    # 16. CONTAINER RENDER MODES
+    # =====================================================================
+    "render_mode": Feature(
+        name="Container Render Modes",
+        description="render_mode config key: tcolorbox (default) vs environment mode with macro-based title/icon",
+        sub_tests=[
+            FeatureSubTest(
+                name="tcolorbox_mode_default",
+                description="Default tcolorbox mode emits title via [ddcontainertitlestyle...]",
+                rst_file="render_mode.rst",
+                conf_override="test_render_mode.py",
+                expected_latex_markers=[
+                    r"\\begin\{ddcontainertcolorboxexplicit\}\[",
+                    r"ddcontainertitlestyletcolorboxexplicit",
+                    r"title=\{.*Tcolorbox Default",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="environment_mode_macros",
+                description="Environment mode emits \\begingroup and \\ddContainerTitle macro",
+                rst_file="render_mode.rst",
+                conf_override="test_render_mode.py",
+                expected_latex_markers=[
+                    r"\\begingroup%",
+                    r"\\ddContainerHasTitletrue%",
+                    r"\\def\\ddContainerTitle\{Environment Mode Title\}",
+                    r"\\def\\ddContainerIcon",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="environment_mode_no_args",
+                description="Environment mode emits \\begin{} without [] args",
+                rst_file="render_mode.rst",
+                conf_override="test_render_mode.py",
+                expected_latex_markers=[
+                    r"\\begin\{ddcontainerenvmode\}[^\[]",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="environment_mode_notitle",
+                description="Environment mode with :notitle: sets \\ddContainerHasTitlefalse",
+                rst_file="render_mode.rst",
+                conf_override="test_render_mode.py",
+                expected_latex_markers=[
+                    r"\\ddContainerHasTitlefalse%",
+                    r"\\def\\ddContainerTitle\{\}",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="environment_mode_endgroup",
+                description="Environment mode closes with \\endgroup after \\end{}",
+                rst_file="render_mode.rst",
+                conf_override="test_render_mode.py",
+                expected_latex_markers=[
+                    r"\\end\{ddcontainerenvmode\}",
+                    r"\\endgroup%",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="environment_mode_nested_scoping",
+                description="Nested environment containers use separate \\begingroup scopes",
+                rst_file="render_mode.rst",
+                conf_override="test_render_mode.py",
+                expected_latex_markers=[
+                    # Outer container opens its group
+                    r"\\def\\ddContainerTitle\{Outer Container\}",
+                    # Inner container opens a new group
+                    r"\\def\\ddContainerTitle\{Inner Container\}",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="preamble_newif_defined",
+                description="\\newif\\ifddContainerHasTitle defined in preamble",
+                rst_file="render_mode.rst",
+                conf_override="test_render_mode.py",
+                expected_latex_markers=[
+                    r"\\newif\\ifddContainerHasTitle",
+                    r"\\ddContainerHasTitlefalse",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+        ],
+        status=FeatureStatus.COMPLETE,
+    ),
 }
 
 
