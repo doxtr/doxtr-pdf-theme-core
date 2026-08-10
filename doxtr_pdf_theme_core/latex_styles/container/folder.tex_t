@@ -4,6 +4,7 @@
    - Drop fuzzy shadow for depth
    - Title displayed inside the tab area (top-right, boxed title)
    - Configurable colors, fonts, frame, shadow, and title positioning
+   - Title bar fills the full top area within the folder outline (drawn behind frame)
 #>
 \definecolor{ddfoldercfg<< c_name >>}{cmyk}{<< c_conf.content_font_color_cmyk >>}
 \definecolor{ddfoldercbg<< c_name >>}{cmyk}{<< c_conf.content_background_color_cmyk >>}
@@ -38,9 +39,24 @@
   grow to right by=\dimexpr 1.5em\relax,
   <% endif %>
   attach boxed title to top right=
-    {yshift=-0.25mm-\tcboxedtitleheight/2,yshifttext=2mm-\tcboxedtitleheight/2},
-  boxed title style={empty,arc=0pt,outer arc=0pt,boxrule=0pt},
+    {yshift=0mm,yshifttext=2mm-\tcboxedtitleheight/2},
+  boxed title style={colback=ddfoldertbg<< c_name >>,colframe=ddfoldertbg<< c_name >>,arc=0pt,outer arc=0pt,boxrule=0pt},
   frame code={
+    <# Fill the entire folder top area - drawn before the underlay so the
+       boxed title text (which tcolorbox prepends to the underlay) renders
+       on top of this background fill. #>
+    \fill[ddfoldertbg<< c_name >>,rounded corners=2pt]
+      let \p1=($(title.north)-(frame.north)$) in
+      (title.north west) ++ (-\y1+0.2pt,-\y1+0.2pt) --
+      (frame.north west) [rounded corners=0pt] --
+      (frame.north east) [rounded corners=2pt] --
+      (title.north-|frame.east) --
+      ([xshift=1em]title.north) [rounded corners=0pt] --
+      (title.north west) [rounded corners=2pt] --
+      cycle;
+  },
+  finish={
+    <# Draw the folder frame outline on top of everything including title #>
     \draw[ddfolderframe<< c_name >>,rounded corners=2pt,line width=<< c_conf.border_width >>]
       let \p1=($(title.north)-(frame.north)$) in
       (title.north) -- (title.north west) -- ++ (-\y1+0.2pt,-\y1+0.2pt) -|
