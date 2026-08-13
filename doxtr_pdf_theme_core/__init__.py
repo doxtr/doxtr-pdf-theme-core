@@ -555,6 +555,11 @@ def config_inited(app, config):
                 for _prop in ['font', 'color', 'size']:
                     if _prop in _el_tier:
                         _heading_explicit.add(f'doxtr_{_el}_{_prop}')
+                    # Also track number_<prop> and line_<prop> as explicit
+                    if f'number_{_prop}' in _el_tier:
+                        _heading_explicit.add(f'doxtr_{_el}_number_{_prop}')
+                    if f'line_{_prop}' in _el_tier:
+                        _heading_explicit.add(f'doxtr_{_el}_line_{_prop}')
                 if 'margin_space' in _el_tier:
                     _heading_explicit.add(f'doxtr_{_el}_margin_space')
 
