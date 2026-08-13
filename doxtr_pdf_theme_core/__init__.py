@@ -56,7 +56,7 @@ from .ast_processors import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 
 __all__ = [
     'setup',
@@ -543,6 +543,21 @@ def config_inited(app, config):
             c_val = parts.get(f'{prefix}color', None)
             template_vars[f'doxtr_{el}_color'] = safe_cmyk(c_val) if c_val else ""
 
+        # --- HEADING PROVENANCE: track which per-level font/color/size/margin_space keys
+        # were explicitly set by theme or user (not merely inherited from core defaults).
+        # This is used by the inheritance logic to treat core-only values as inheritable.
+        _heading_explicit = set()
+        _theme_headings = theme_defaults.get('headings', {})
+        _user_headings  = getattr(config, 'doxtr_headings', {}) or {}
+        for _el in ['part', 'chapter', 'section', 'subsection', 'subsubsection']:
+            for _tier in (_theme_headings, _user_headings):
+                _el_tier = _tier.get(_el, {})
+                for _prop in ['font', 'color', 'size']:
+                    if _prop in _el_tier:
+                        _heading_explicit.add(f'doxtr_{_el}_{_prop}')
+                if 'margin_space' in _el_tier:
+                    _heading_explicit.add(f'doxtr_{_el}_margin_space')
+
         # --- HEADINGS ---
         global_align = headings.get('align', 'alternate')
         global_margin = headings.get('numbers_in_margin', True)
@@ -605,21 +620,29 @@ def config_inited(app, config):
 
         # --- TEXT INHERITANCE LOGIC ---
         if resolve_val('doxtr_inherit_all', 'inherit_all', True):
-            for hierarchy in [['part', 'chapter', 'section', 'subsection', 'subsubsection'], ['part_number', 'chapter_number', 'section_number', 'subsection_number', 'subsubsection_number'], ['chapter_line', 'section_line', 'subsection_line', 'subsubsection_line'], ['epigraph', 'part_epigraph', 'chapter_epigraph', 'section_epigraph', 'subsection_epigraph', 'subsubsection_epigraph'], ['epigraph_author', 'part_epigraph_author', 'chapter_epigraph_author', 'section_epigraph_author', 'subsection_epigraph_author', 'subsubsection_epigraph_author']]:
+            # NOTE: epigraph and epigraph_author hierarchies are intentionally absent here.
+            # The per-level epigraph loop above implements an inline cascade via indexed
+            # fallback keys (global → part → chapter → section → …), so all per-level
+            # epigraph slots are already fully populated before this block runs.
+            # Adding them here would be dead code: every slot is truthy, making the guard
+            # `if not template_vars.get(key)` always False.
+            for hierarchy in [['part', 'chapter', 'section', 'subsection', 'subsubsection'], ['part_number', 'chapter_number', 'section_number', 'subsection_number', 'subsubsection_number'], ['chapter_line', 'section_line', 'subsection_line', 'subsubsection_line']]:
                 for prop, is_enabled in [('font', resolve_val('doxtr_inherit_font', 'inherit_font', True)), ('color', resolve_val('doxtr_inherit_color', 'inherit_color', True)), ('size', resolve_val('doxtr_inherit_size', 'inherit_size', False))]:
                     if is_enabled:
                         current_val = template_vars.get(f'doxtr_{hierarchy[0]}_{prop}', None)
                         for i in range(1, len(hierarchy)):
                             key = f'doxtr_{hierarchy[i]}_{prop}'
-                            if not template_vars.get(key): template_vars[key] = current_val
-                            else: current_val = template_vars[key]
+                            if not template_vars.get(key) or key not in _heading_explicit:
+                                template_vars[key] = current_val
+                            else:
+                                current_val = template_vars[key]
             # --- MARGIN SPACE INHERITANCE ---
             # Propagate margin_space down the heading hierarchy (chapter → section → subsection → subsubsection)
             margin_hierarchy = ['chapter', 'section', 'subsection', 'subsubsection']
             current_val = template_vars.get('doxtr_chapter_margin_space', None)
             for i in range(1, len(margin_hierarchy)):
                 key = f'doxtr_{margin_hierarchy[i]}_margin_space'
-                if not template_vars.get(key):
+                if not template_vars.get(key) or key not in _heading_explicit:
                     template_vars[key] = current_val
                 else:
                     current_val = template_vars[key]

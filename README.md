@@ -147,7 +147,7 @@ This produces a fully styled PDF with blue headings, gold accent lines, blue tab
 
 ### Adding Element-Specific Overrides
 
-For more control, set `doxtr_theme_defaults` — a dictionary that overrides specific elements. You only set the keys you want to change; everything else inherits from the core.
+For more control, set `doxtr_theme_defaults` — a dictionary that overrides specific elements. You only set the keys you want to change; unset config keys fall back to core defaults.
 
 ```python
 def setup(app):
@@ -444,12 +444,12 @@ doxtr_headings = {
 
 ### Document Inheritance Hierarchy
 
-Font, color, and size properties inherit top-down through the hierarchy (`part` → `chapter` → `section` → `subsection` → `subsubsection`):
+Font, color, and size properties cascade top-down through the heading hierarchy (`part` → `chapter` → `section` → `subsection` → `subsubsection`). Each level inherits from the nearest ancestor that was explicitly set by the theme or user — not necessarily the core. For example, if a theme sets only `chapter.font = 'Inter'` and leaves lower levels unset, `section`, `subsection`, and `subsubsection` all inherit `'Inter'`, not the core's per-level defaults.
 
 ```python
-doxtr_inherit_all = True    # Global kill-switch for inheritance
-doxtr_inherit_font = True   # Inherit font families downward
-doxtr_inherit_color = True  # Inherit hex colors downward
+doxtr_inherit_all = True    # Global kill-switch for all style cascading
+doxtr_inherit_font = True   # Cascade font families downward
+doxtr_inherit_color = True  # Cascade colors downward
 doxtr_inherit_size = False  # Let KOMA handle font scaling by default
 ```
 
