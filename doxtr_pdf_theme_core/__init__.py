@@ -646,13 +646,13 @@ def config_inited(app, config):
             
             for p in admon_props:
                 val = t_dict.get(p)
-                if not val and val != False:
+                if val is None:
                     val = gen_dict.get(p)
-                if not val and val != False:
+                if val is None:
                     val = CORE_CONFIG_MANIFEST.get('admonitions', {}).get('generic', {}).get(p) if t != 'generic' else CORE_CONFIG_MANIFEST.get('admonitions', {}).get('generic', {}).get(p)
                 
                 # Check root user config override layer
-                if not val and val != False:
+                if val is None:
                     val = template_vars.get(f'doxtr_admonition_generic_{p}')
                 
                 if p == 'title_icon' and val and not str(val).strip().startswith('\\') and not str(val).strip().startswith('<'):
@@ -692,10 +692,10 @@ def config_inited(app, config):
                 
                 # Bulletproof fallback chain matching Admonitions
                 val = t_dict.get(p)
-                if not val and val != False: val = gen_dict.get(p)
-                if not val and val != False: val = needs.get(p)
+                if val is None: val = gen_dict.get(p)
+                if val is None: val = needs.get(p)
                 
-                if not val and val != False:
+                if val is None:
                     if p == 'segmentation_color':
                         val = template_vars.get(f'doxtr_need_{t}_title_background_color') or CORE_CONFIG_MANIFEST.get('needs', {}).get('generic', {}).get('title_background_color', '#0092FA')
                     else:
