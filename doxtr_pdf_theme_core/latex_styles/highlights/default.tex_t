@@ -3,10 +3,10 @@
    indentation for the `.. highlights::` directive with a fully styled box.
 #>
 
-\definecolor{ddhighlightstitlefg}{cmyk}{<< h_conf.title_font_color_cmyk >>}
-\definecolor{ddhighlightscontentbg}{cmyk}{<< h_conf.content_background_color_cmyk >>}
-\definecolor{ddhighlightscontentfg}{cmyk}{<< h_conf.content_font_color_cmyk >>}
-\definecolor{ddhighlightsborder}{cmyk}{<< h_conf.border_color_cmyk >>}
+\definecolor{ddhighlightstitlefg}{rgb}{<< h_conf.title_font_color_cmyk >>}
+\definecolor{ddhighlightscontentbg}{rgb}{<< h_conf.content_background_color_cmyk >>}
+\definecolor{ddhighlightscontentfg}{rgb}{<< h_conf.content_font_color_cmyk >>}
+\definecolor{ddhighlightsborder}{rgb}{<< h_conf.border_color_cmyk >>}
 
 \newtcolorbox{ddhighlightsbox}{
     enhanced, breakable, parbox=false,

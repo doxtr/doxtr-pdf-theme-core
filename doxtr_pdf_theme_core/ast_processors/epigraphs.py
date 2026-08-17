@@ -14,11 +14,15 @@ def process_epigraph_ast(app, doctree, docname):
     Transforms block_quote nodes with 'epigraph' class into LaTeX \\dictum
     commands, with special handling for chapter/part preambles.
 
+    Skipped if ``doxtr_enable_epigraph_processor`` is False.
+
     Args:
         app: The Sphinx application object.
         doctree: The doctree to process.
         docname: The name of the document being processed.
     """
+    if not getattr(app.config, 'doxtr_enable_epigraph_processor', True):
+        return
     if getattr(app.builder, 'format', '') != 'latex':
         return
     

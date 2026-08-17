@@ -21,13 +21,18 @@ __all__ = [
     'VALID_ADMONITION_KEYS',
     'VALID_CODE_KEYS',
     'VALID_NEEDS_KEYS',
+    'VALID_TOPIC_KEYS',
+    'VALID_CONTENTS_KEYS',
     'validate_config_keys',
     'validate_typed_section',
     'validate_container_mapping',
     'make_resolve_val_fn',
     'make_merge_section_fn',
+    'make_collect_dark_fn',
     'warn_deprecated',
     'debug_timer',
+    '_unwrap_mode',
+    'validate_wrapper_keys',
 ]
 
 logger = logging.getLogger(__name__)
@@ -55,6 +60,7 @@ VALID_KEYS: Dict[str, Set[str]] = {
     },
     'draft': {
         'text', 'date_format', 'timezone', 'color', 'font_size', 'font',
+        'template',
     },
     'epigraphs': {
         'width', 'format', 'align_box', 'align_text', 'align_author',
@@ -63,6 +69,7 @@ VALID_KEYS: Dict[str, Set[str]] = {
     },
     'headings': {
         'align', 'numbers_in_margin', 'margin_space',
+        'number_match_title_xheight', 'number_sep',
         'chapter', 'section', 'subsection', 'subsubsection',
     },
     'microtype': {
@@ -87,6 +94,49 @@ VALID_KEYS: Dict[str, Set[str]] = {
         'content_font', 'content_font_size', 'content_font_color', 'content_background_color',
         'before_skip', 'after_skip',
     },
+    'toc': {
+        'title_font', 'title_size', 'title_color',
+        'chapter_font', 'chapter_size', 'chapter_color', 'chapter_bold',
+        'section_font', 'section_size', 'section_color',
+        'subsection_font', 'subsection_size', 'subsection_color',
+        'dot_leader_color', 'dot_leader_char',
+        'page_number_font', 'page_number_color',
+    },
+    'bibliography': {
+        'title_font', 'title_size', 'title_color',
+        'entry_font', 'entry_size', 'entry_color',
+        'label_color', 'label_font',
+    },
+    'index': {
+        'title_font', 'title_size', 'title_color',
+        'entry_font', 'entry_size',
+        'subentry_font', 'subentry_size',
+        'letter_group_font', 'letter_group_color',
+    },
+    'glossary': {
+        'term_font', 'term_size', 'term_color',
+        'definition_font', 'definition_size', 'definition_color',
+        'separator',
+    },
+    'links': {
+        'inner_color', 'outer_color',
+    },
+    'topic': {
+        'enabled', 'style', 'title_position', 'title_icon', 'title_font', 'title_font_size',
+        'title_font_color', 'title_icon_color', 'title_background_color',
+        'border_color', 'border_width', 'cutaway_depth', 'bottom_frame_color',
+        'bottom_frame_height', 'cutaway_fill_color', 'content_font',
+        'content_font_size', 'content_font_color', 'content_background_color',
+        'box_shadow', 'before_skip', 'after_skip',
+    },
+    'contents': {
+        'enabled', 'style', 'title_icon', 'title_font', 'title_font_size',
+        'title_font_color', 'title_icon_color', 'title_background_color',
+        'border_color', 'border_width', 'cutaway_depth', 'bottom_frame_color',
+        'bottom_frame_height', 'cutaway_fill_color', 'content_font',
+        'content_font_size', 'content_font_color', 'content_background_color',
+        'box_shadow', 'before_skip', 'after_skip',
+    },
     'tables': {
         'style', 'title_style', 'caption_position', 'caption_top_offset',
         'title_padding', 'title_text_offset', 'title_fade_dots',
@@ -99,7 +149,30 @@ VALID_KEYS: Dict[str, Set[str]] = {
         'style', 'caption_background_color', 'caption_font_color',
         'caption_font', 'caption_font_size', 'caption_padding', 'caption_align',
     },
+    # --- Global settings (doxtr_globals['light']) ---
+    'globals': {
+        'show_release', 'headsep', 'footskip', 'headheight', 'footheight',
+        'show_list_of_figures', 'show_list_of_tables', 'show_list_of_listings',
+        'appendix_chapter_numbering',
+        'footer_logo', 'footer_logo_height',
+        'main_font', 'main_font_options', 'main_font_size',
+        'sans_font', 'sans_font_options',
+        'mono_font', 'mono_font_options',
+        'inherit_all', 'inherit_font', 'inherit_color', 'inherit_size',
+        'wcag_level', 'wcag_color_debug',
+        'page_background',
+        'container_title_style_path', 'container_style_path',
+        'table_style_path', 'figure_style_path', 'code_style_path',
+        'admonition_style_path', 'need_style_path', 'title_page_template_path',
+        'sidebar_style_path', 'topic_style_path', 'contents_style_path',
+        'landscape_package',
+        'font_auto_discover',   # Enable/disable font auto-discovery (requires fonttools)
+    },
 }
+
+# --- Valid keys for user doxtr_fonts entries ---
+# Each entry in the doxtr_fonts dict can use these keys.
+VALID_FONT_KEYS: set = {'dir', 'pattern', 'weights', 'upright', 'bold', 'italic', 'bold_italic', 'options'}
 
 # --- Valid keys for typed sections (Task 2.3) ---
 # These validate per-entry configs within containers, admonitions, code, etc.
@@ -144,6 +217,24 @@ VALID_NEEDS_KEYS: set = {
     'metadata_key_font', 'metadata_font_color', 'metadata_font_size', 'metadata_font',
     'content_background_color', 'content_font_color', 'content_font_size', 'content_font',
     'before_skip', 'after_skip',
+}
+
+VALID_TOPIC_KEYS: set = {
+    'enabled', 'style', 'title_icon', 'title_font', 'title_font_size',
+    'title_font_color', 'title_icon_color', 'title_background_color',
+    'border_color', 'border_width', 'cutaway_depth', 'bottom_frame_color',
+    'bottom_frame_height', 'cutaway_fill_color', 'content_font',
+    'content_font_size', 'content_font_color', 'content_background_color',
+    'box_shadow', 'before_skip', 'after_skip',
+}
+
+VALID_CONTENTS_KEYS: set = {
+    'enabled', 'style', 'title_icon', 'title_font', 'title_font_size',
+    'title_font_color', 'title_icon_color', 'title_background_color',
+    'border_color', 'border_width', 'cutaway_depth', 'bottom_frame_color',
+    'bottom_frame_height', 'cutaway_fill_color', 'content_font',
+    'content_font_size', 'content_font_color', 'content_background_color',
+    'box_shadow', 'before_skip', 'after_skip',
 }
 
 
@@ -259,9 +350,78 @@ def make_resolve_val_fn(config, theme_defaults: dict):
                 val = section_conf if section_conf is not None else fallback
             if val is not None:
                 return val
-        return DOXTR_GLOBALS.get(theme_key, fallback)
+        # Fallback: try DOXTR_GLOBALS['light'] first, then top-level
+        _dg_light = DOXTR_GLOBALS.get('light', {})
+        val = _dg_light.get(theme_key, DOXTR_GLOBALS.get(theme_key, fallback))
+        if val is not None:
+            return val
+        return fallback
 
     return resolve_val
+
+
+def _unwrap_mode(section_dict: dict, mode: str = 'light',
+                 section_name: str = '') -> dict:
+    """Extract the mode sub-dict, or return the full dict if flat.
+
+    If the dict contains a 'light' or 'dark' key, it is treated as a
+    wrapped config and only the requested mode sub-dict is returned.
+
+    Args:
+        section_dict: Raw user or theme dict for one section.
+        mode: 'light' or 'dark'.
+        section_name: Section name for warning messages.
+
+    Returns:
+        The mode-specific sub-dict, or the full dict if it has no wrapper keys.
+    """
+    has_light = 'light' in section_dict
+    has_dark = 'dark' in section_dict
+
+    if has_light or has_dark:
+        sentinel_keys = {'light', 'dark'}
+        unexpected_flat = {
+            k for k in section_dict
+            if k not in sentinel_keys
+            and not isinstance(k, int)
+        }
+        if unexpected_flat:
+            logger.warning(
+                f"[Doxtr Core] Section '{section_name}' has both 'light'/'dark' "
+                f"wrapper keys and unexpected top-level keys: "
+                f"{sorted(str(k) for k in unexpected_flat)}. "
+                f"Top-level keys outside 'light'/'dark' are ignored when a "
+                f"wrapper is present."
+            )
+        return section_dict.get(mode, {})
+
+    # Fully flat dict — treat as light-mode config
+    return section_dict if mode == 'light' else {}
+
+
+def validate_wrapper_keys(raw_dict: dict, section_name: str) -> None:
+    """Warn if any top-level key in a section dict looks like a typo of 'light'/'dark'.
+
+    Called on the raw user/theme dict before _unwrap_mode, specifically to
+    catch typos in the wrapper keys themselves.
+
+    Args:
+        raw_dict: The raw user dict for a section.
+        section_name: Section name for warning messages.
+    """
+    if 'light' not in raw_dict and 'dark' not in raw_dict:
+        return  # Flat dict — no wrapper keys expected, skip.
+    sentinel_keys = {'light', 'dark'}
+    unknown_wrappers = {
+        k for k in raw_dict
+        if k not in sentinel_keys and not isinstance(k, int)
+    }
+    if unknown_wrappers:
+        logger.warning(
+            f"[Doxtr Core] Unknown top-level keys in '{section_name}': "
+            f"{sorted(str(k) for k in unknown_wrappers)}. "
+            f"Only 'light' and 'dark' are valid wrapper keys."
+        )
 
 
 def make_merge_section_fn(config, theme_defaults: dict):
@@ -278,25 +438,60 @@ def make_merge_section_fn(config, theme_defaults: dict):
         A merge_section function with signature:
         merge_section(name, config_attr=None) -> dict
     """
-    def merge_section(name: str, config_attr: Optional[str] = None) -> dict:
+    def merge_section(name: str, config_attr: Optional[str] = None,
+                      mode: str = 'light') -> dict:
         """Three-tier merge: core → theme → user for a config section.
 
         Args:
             name: The section name in CORE_CONFIG_MANIFEST.
             config_attr: Optional override for the Sphinx config attribute name.
                         Defaults to 'doxtr_{name}'.
+            mode: 'light' or 'dark'. Unwraps user/theme dicts if wrapped.
 
         Returns:
             The merged configuration dictionary.
         """
         attr = config_attr or f'doxtr_{name}'
         section_core = CORE_CONFIG_MANIFEST.get(name, {})
-        section_theme = theme_defaults.get(name, {})
-        section_user = getattr(config, attr, {})
-        return deep_update(deep_update(copy.deepcopy(section_core), section_theme), section_user)
+        section_theme = _unwrap_mode(theme_defaults.get(name, {}), mode, name)
+        section_user = _unwrap_mode(getattr(config, attr, {}), mode, name)
+        return deep_update(
+            deep_update(copy.deepcopy(section_core), copy.deepcopy(section_theme)),
+            copy.deepcopy(section_user),
+        )
 
     return merge_section
 
+
+def make_collect_dark_fn(config, theme_defaults: dict):
+    """Factory returning a collect_dark(name, config_attr=None) closure.
+
+    The returned function collects merged theme+user dark overrides for a section.
+
+    Args:
+        config: The Sphinx config object.
+        theme_defaults: The theme-level defaults dictionary.
+
+    Returns:
+        A collect_dark function with signature:
+        collect_dark(name, config_attr=None) -> dict
+    """
+    def collect_dark(name: str, config_attr: Optional[str] = None) -> dict:
+        """Collect merged theme+user dark overrides for a section.
+
+        Args:
+            name: The section name.
+            config_attr: Optional override for Sphinx config attribute.
+                        Defaults to 'doxtr_{name}'.
+
+        Returns:
+            Merged dark overrides dict (theme dark + user dark).
+        """
+        attr = config_attr or f'doxtr_{name}'
+        theme_dark = _unwrap_mode(theme_defaults.get(name, {}), 'dark', name)
+        user_dark = _unwrap_mode(getattr(config, attr, {}), 'dark', name)
+        return deep_update(copy.deepcopy(theme_dark), copy.deepcopy(user_dark))
+    return collect_dark
 
 def warn_deprecated(
     config,

@@ -64,58 +64,71 @@ THEME_DIR = os.path.abspath(os.path.dirname(__file__))
 ASSETS_DIR = os.path.join(THEME_DIR, 'assets')
 
 DOXTR_GLOBALS = {
-    # --- Basic PDF Geometry & Meta ---
-    'show_release': True,               # Whether to show the release version on the title page
-    'headsep': '8mm',                   # Space between header and text body
-    'footskip': '10mm',                 # Space between text body and footer
-    'headheight': '18pt',               # Height of the header line
-    'footheight': '25pt',               # Height of the footer line
-    
-    # --- Lists & Indices ---
-    'show_list_of_figures': True,       # Print List of Figures right before the Index
-    'show_list_of_tables': True,        # Print List of Tables right before the Index
-    'show_list_of_listings': True,      # Print List of Code Blocks right before the Index
-    'appendix_chapter_numbering': True, # If True, chapters inside appendices are numbered A.1, A.2. If False, they are unnumbered.
-    
-    # --- Footer Logo ---
-    'footer_logo': os.path.join(ASSETS_DIR, 'doxtr_icon_small.png'), # Path to an image file for the footer
-    'footer_logo_height': '1.5em',                                     # Height of the footer logo
-    
-    # --- Global Font Families ---
-    # Artful pairing: Spectral (readable serif body) + Montserrat (geometric sans) + FiraCode NF (ligature mono)
-    'main_font': 'Spectral',            # Readable literary serif for body text
-    'main_font_options': 'BoldFont={Spectral SemiBold}, ItalicFont={Spectral Italic}, BoldItalicFont={Spectral SemiBold Italic}',
-    'sans_font': 'Montserrat',          # Clean geometric sans for UI elements
-    'sans_font_options': '',             # fontspec options for sans font (e.g. 'Scale=MatchLowercase')
-    'mono_font': 'FiraCode Nerd Font',  # Ligature-enabled monospace for code
-    'mono_font_options': 'Scale=MatchLowercase',  # fontspec options for mono font (e.g. 'Scale=MatchLowercase')
-    
-    # --- Global Hierarchy Inheritance ---
-    'inherit_all': True,                # If True, structural elements inherit missing styles from parent elements
-    'inherit_font': True,               # E.g., chapter inherits part font, section inherits chapter font
-    'inherit_color': True,              # E.g., chapter inherits part color
-    'inherit_size': False,              # (False by default so sizes naturally cascade down)
+    'light': {
+        # --- Basic PDF Geometry & Meta ---
+        'show_release': True,               # Whether to show the release version on the title page
+        'headsep': '8mm',                   # Space between header and text body
+        'footskip': '10mm',                 # Space between text body and footer
+        'headheight': '18pt',               # Height of the header line
+        'footheight': '25pt',               # Height of the footer line
+        
+        # --- Lists & Indices ---
+        'show_list_of_figures': False,      # Print List of Figures right before the Index
+        'show_list_of_tables': False,       # Print List of Tables right before the Index
+        'show_list_of_listings': False,     # Print List of Code Blocks right before the Index
+        'appendix_chapter_numbering': True, # If True, chapters inside appendices are numbered A.1, A.2. If False, they are unnumbered.
+        
+        # --- Footer Logo ---
+        'footer_logo': os.path.join(ASSETS_DIR, 'doxtr_icon_small.png'), # Path to an image file for the footer
+        'footer_logo_height': '1.5em',                                     # Height of the footer logo
+        
+        # --- Global Font Families ---
+        # Artful pairing: Spectral (readable serif body) + Montserrat (geometric sans) + FiraCode NF (ligature mono)
+        'main_font': 'Spectral',            # Readable literary serif for body text
+        'main_font_options': 'BoldFont={Spectral SemiBold}, ItalicFont={Spectral Italic}, BoldItalicFont={Spectral SemiBold Italic}',
+        'sans_font': 'Montserrat',          # Clean geometric sans for UI elements
+        'sans_font_options': '',             # fontspec options for sans font (e.g. 'Scale=MatchLowercase')
+        'mono_font': 'FiraCode Nerd Font',  # Ligature-enabled monospace for code
+        'mono_font_options': 'Scale=MatchLowercase',  # fontspec options for mono font (e.g. 'Scale=MatchLowercase')
+        
+        # --- Base Document Font Size ---
+        'main_font_size': '11.5pt',         # Base body text font size (used by LaTeX pointsize and size_factor calculations)
+        
+        # --- Global Hierarchy Inheritance ---
+        'inherit_all': True,                # If True, structural elements inherit missing styles from parent elements
+        'inherit_font': True,               # E.g., chapter inherits part font, section inherits chapter font
+        'inherit_color': True,              # E.g., chapter inherits part color
+        'inherit_size': False,              # (False by default so sizes naturally cascade down)
 
-    # --- Semantic Color System ---
-    'page_background': '#FFFFFF',       # Page background for contrast calculations
-    
-    # --- WCAG Accessibility ---
-    'wcag_level': 7,                  # Minimum contrast ratio (4.5 = AA, 7 = AAA). Applied to all contrast:fg/bg calculations.
-    'wcag_color_debug': False,          # If True, prints input/output colors for every WCAG contrast calculation to the console during build. Useful for theme authors to verify corrections.
-    
-    # --- Custom File Resolution Paths (For Theme Authors) ---
-    'container_title_style_path': '',   # Custom folder to search for container .tex_t templates
-    'container_style_path': '',         # Custom folder for container body .tex_t templates
-    'table_style_path': '',             # Custom folder for table .tex_t templates
-    'figure_style_path': '',            # Custom folder for figure .tex_t templates
-    'code_style_path': '',              # Custom folder for code block .tex_t templates
-    'admonition_style_path': '',        # Custom folder for admonition .tex_t templates
-    'need_style_path': '',              # Custom folder for sphinx-needs .tex_t templates
-    'title_page_template_path': '',     # Custom folder for title page .tex_t templates
-    'sidebar_style_path': '',            # Custom folder for sidebar .tex_t templates
-    
-    # --- Landscape Pages ---
-    'landscape_package': 'pdflscape',   # Package for landscape pages: 'pdflscape', 'lscape', or '' to disable
+        # --- WCAG Accessibility ---
+        'wcag_level': 7,                  # Minimum contrast ratio (4.5 = AA, 7 = AAA).
+        'wcag_color_debug': False,          # If True, prints input/output colors for every WCAG contrast calculation.
+        
+        # --- Custom File Resolution Paths (For Theme Authors) ---
+        'container_title_style_path': '',   # Custom folder to search for container .tex_t templates
+        'container_style_path': '',         # Custom folder for container body .tex_t templates
+        'table_style_path': '',             # Custom folder for table .tex_t templates
+        'figure_style_path': '',            # Custom folder for figure .tex_t templates
+        'code_style_path': '',              # Custom folder for code block .tex_t templates
+        'admonition_style_path': '',        # Custom folder for admonition .tex_t templates
+        'need_style_path': '',              # Custom folder for sphinx-needs .tex_t templates
+        'title_page_template_path': '',     # Custom folder for title page .tex_t templates
+        'sidebar_style_path': '',           # Custom folder for sidebar .tex_t templates
+        'topic_style_path': '',             # Custom folder for topic .tex_t templates
+        'contents_style_path': '',          # Custom folder for contents .tex_t templates
+        # --- Landscape Pages ---
+        'landscape_package': 'pdflscape',   # Package for landscape pages: 'pdflscape', 'lscape', or '' to disable
+
+        # --- Font Auto-Discovery ---
+        # When True, the core scans each entry in doxtr_theme_style_paths for a
+        # fonts/ subdirectory (and a sibling fonts/ if the parent dir is a Python
+        # package) and registers discovered .ttf/.otf families automatically.
+        # Requires fonttools>=4.0; skipped with an info log if not installed.
+        # Set False to disable auto-discovery entirely (explicit registration still works).
+        'font_auto_discover': True,
+    },
+    # 'dark' sub-key intentionally absent at core level.
+    # Dark defaults are auto-generated at runtime (Plan 06).
 }
 
 DOXTR_TITLE_PAGE = {
@@ -165,7 +178,22 @@ DOXTR_HEADINGS = {
     'align': 'alternate',               # Numbers alternate left/right based on page
     'numbers_in_margin': True,          # Push numbers into the margin
     'margin_space': '0em',              # No gap between title text and body edge
+    'number_sep': '\\marginparsep',      # Space between text block edge and the number in the margin
+    'number_match_title_xheight': True,  # Scale section number cap height to title x-height
     
+    # --- Size System ---
+    # Heading sizes can be specified in two ways:
+    # 1. Absolute: 'size': r'\fontsize{26pt}{32pt}\selectfont'  — fixed LaTeX font command
+    # 2. Relative: 'size_factor': 2.0  — multiplier of doxtr_main_font_size (e.g. 2.0 × 11.5pt = 23.0pt)
+    # If both 'size' and 'size_factor' are present in the MERGED config, 'size' takes precedence
+    # (explicit user override wins over computed value).
+    # If neither is present, no size command is emitted (inherits from document class).
+    # The baselineskip is automatically calculated as size × 1.2.
+    # Theme authors can mix both methods: use size_factor for levels that should scale with the
+    # base font size, and absolute 'size' for levels that need a fixed dimension.
+    # See 'chapter' and 'section' (size_factor) vs 'subsection' and 'subsubsection' (absolute)
+    # below for a demonstration of both approaches.
+
     # --- Level-Specific Overrides ---
     'part': {
         'font': 'Cinzel',               # Classical Roman capitals for parts
@@ -180,7 +208,7 @@ DOXTR_HEADINGS = {
     },
     'chapter': {
         'font': 'Story Script',         # Hand-drawn script for chapter titles
-        'size': r'\fontsize{26pt}{32pt}\selectfont',
+        'size_factor': 2.0,             # 2× base font size (e.g. 11.5pt × 2.0 = 23.0pt)
         'color': '#183060',             # Deep navy
         'number_margin': True,          # Push chapter numbers into the margin
         'number_line': True,            # Render decorative structural line
@@ -193,13 +221,14 @@ DOXTR_HEADINGS = {
     },
     'section': {
         'font': 'Cabin Sketch',         # Sketchy hand-drawn for sections
-        'size': r'\fontsize{18pt}{22pt}\selectfont',
+        'size_factor': 1.5,             # 1.5× base font size (e.g. 11.5pt × 1.5 = 17.2pt)
         'color': '#184878',             # Medium navy
         'number_margin': True,
         'number_line': False,
         'number_font': 'Kranky',        # Quirky handwritten numbers
-        'number_size': r'\large\bfseries',
+        # number_size intentionally omitted — overridden by number_match_title_xheight
         'number_color': '#306090',      # Lighter blue
+        'margin_space': '0em',          # Pin to zero so a theme's global margin_space doesn't bleed in
     },
     'subsection': {
         'font': 'Fredericka the Great', # Ornate engraved style
@@ -208,8 +237,9 @@ DOXTR_HEADINGS = {
         'number_margin': True,
         'number_line': False,
         'number_font': 'Kranky',        # Quirky handwritten numbers
-        'number_size': r'\normalsize',
+        # number_size intentionally omitted — overridden by number_match_title_xheight
         'number_color': '#306090',
+        'margin_space': '0em',          # Pin to zero so a theme's global margin_space doesn't bleed in
     },
     'subsubsection': {
         'font': 'Montserrat',           # Clean geometric for deepest level
@@ -218,8 +248,9 @@ DOXTR_HEADINGS = {
         'number_margin': True,
         'number_line': False,
         'number_font': 'Kranky',        # Quirky handwritten numbers
-        'number_size': r'\normalsize\bfseries',
+        # number_size intentionally omitted — overridden by number_match_title_xheight
         'number_color': '#484860',
+        'margin_space': '0em',          # Pin to zero so a theme's global margin_space doesn't bleed in
     },
 }
 
@@ -356,8 +387,8 @@ DOXTR_CONTAINERS = {
         'title_icon_font_size': '',
         'content_font': 'Special Elite',
         'content_font_size': r'\normalsize',
-        'content_font_color': '#2A2A2A',
-        'content_background_color': '',
+        'content_font_color': '#000000',        # Matches body text color (dark-inverts to #DBDBDB)
+        'content_background_color': 'dd:page',  # Matches document page background
         'before_skip': '2em plus 0.5em minus 0.5em',
         'after_skip': '1.5em plus 0.5em minus 0.5em',
     },
@@ -1077,7 +1108,62 @@ DOXTR_SEMANTIC_PALETTE = {
     'success':   '#66D98E',   # Fresh green (#66D98E) — hints, tips, decisions
     'warning':   '#F0A860',   # Warm amber (#F0A860) — warnings, caution
     'danger':    '#E05050',   # Clear red (#E05050) — danger, error, risk
-    'page':      '#FFFFFF',   # Default page background for contrast calculations
+    'page':      '#FFFFFF',   # Single source of truth for the page background color
+}
+
+# --- Topic Styling ---
+# Topics are rendered as tcolorbox environments with 45° cutaway corners.
+# Replaces Sphinx's default sphinxShadowBox for the `.. topic::` directive.
+DOXTR_TOPIC = {
+    'enabled': True,                    # Set False to fall back to Sphinx's sphinxShadowBox
+    'style': 'default',                 # Name of the .tex_t file to load
+    'title_position': 'top',           # Title strip position: 'left' (rotated) or 'top' (horizontal)
+    'title_icon': '',                   # Optional icon before title (e.g., r'\faIcon{bookmark}')
+    'title_font': 'Montserrat',         # Title font family
+    'title_font_size': r'\large\bfseries',  # Title font size/weight
+    'title_font_color': '#FFFFFF',      # Title text color (dark-inverts to dark)
+    'title_icon_color': '#FFFFFF',      # Title icon color (dark-inverts to dark)
+    'title_background_color': '#1E3A6E',  # Title bar background (slightly lighter than primary)
+    'border_color': '#3A5A8E',          # Frame border color (lightened primary)
+    'border_width': '0.8pt',            # Frame border width
+    'cutaway_depth': '12pt',            # Fixed depth of 45° top-right cutaway
+    'bottom_frame_color': '#1E3A6E',    # Thick bottom frame color (matches title bg)
+    'bottom_frame_height': '3pt',       # Thick bottom frame height
+    'cutaway_fill_color': '#FFFFFF',    # Color for cutaway fills (page bg — dark-inverts correctly)
+    'content_font': '',                 # Content body font (empty = inherit)
+    'content_font_size': r'\normalsize',  # Content body font size
+    'content_font_color': '#1A1A2E',    # Content text color (dark near-black — dark-inverts to light)
+    'content_background_color': '#F0F4FA',  # Content area background (light blue tint — dark-inverts to dark)
+    'box_shadow': False,                # Whether to show a box shadow (planned — not yet implemented)
+    'before_skip': '1.5em plus 0.5em minus 0.5em',  # Space before box
+    'after_skip': '1.5em plus 0.5em minus 0.5em',   # Space after box
+}
+
+# --- Contents Styling ---
+# Contents boxes are rendered as tcolorbox environments with 45° cutaway corners.
+# Replaces Sphinx's default sphinxShadowBox for the `.. contents::` directive.
+DOXTR_CONTENTS = {
+    'enabled': True,                    # Set False to fall back to Sphinx's sphinxShadowBox
+    'style': 'default',                 # Name of the .tex_t file to load
+    'title_icon': r'\faIcon{list}',    # Icon before title (list icon for TOC)
+    'title_font': 'Montserrat',         # Title font family
+    'title_font_size': r'\large\bfseries',  # Title font size/weight
+    'title_font_color': '#FFFFFF',      # Title text color (dark-inverts to dark)
+    'title_icon_color': '#FFFFFF',      # Title icon color (dark-inverts to dark)
+    'title_background_color': '#1E3A6E',  # Title bar background (slightly lighter than primary)
+    'border_color': '#3A5A8E',          # Frame border color (lightened primary)
+    'border_width': '0.8pt',            # Frame border width
+    'cutaway_depth': '12pt',            # Fixed depth of 45° top-right cutaway
+    'bottom_frame_color': '#1E3A6E',    # Thick bottom frame color (matches title bg)
+    'bottom_frame_height': '3pt',       # Thick bottom frame height
+    'cutaway_fill_color': '#FFFFFF',    # Color for cutaway fills (page bg — dark-inverts correctly)
+    'content_font': '',                 # Content body font (empty = inherit)
+    'content_font_size': r'\normalsize',  # Content body font size
+    'content_font_color': '#1A1A2E',    # Content text color (dark near-black — dark-inverts to light)
+    'content_background_color': '#F0F4FA',  # Content area background (light blue tint — dark-inverts to dark)
+    'box_shadow': False,                # Whether to show a box shadow (planned — not yet implemented)
+    'before_skip': '1.5em plus 0.5em minus 0.5em',  # Space before box
+    'after_skip': '1.5em plus 0.5em minus 0.5em',   # Space after box
 }
 
 # --- Table of Contents Styling ---
@@ -1148,8 +1234,22 @@ DOXTR_GLOSSARY = {
     'separator': r'\quad—\quad',        # Between term and definition inline
 }
 
+# --- Hyperlink Colors ---
+DOXTR_LINKS = {
+    'inner_color': 'dd:info:darken:40',    # Internal cross-references (linkcolor, citecolor)
+    'outer_color': 'dd:warning:darken:40', # External URLs (urlcolor, filecolor, menucolor)
+}
+
 # The Master Manifest used by __init__.py to cascade configurations
+# Core dark palette defaults — auto-generated at runtime (Plan 05).
+# Only 'page' is hardcoded here; all other keys are luminance-inverted
+# from the light palette during config_inited().
+DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS = {
+    'page': '#242424',   # Default dark page background (reduces eye strain)
+}
+
 CORE_CONFIG_MANIFEST = {
+    'globals': DOXTR_GLOBALS,
     'title_page': DOXTR_TITLE_PAGE,
     'headings': DOXTR_HEADINGS,
     'parts': DOXTR_PARTS,
@@ -1164,8 +1264,11 @@ CORE_CONFIG_MANIFEST = {
     'needs': DOXTR_NEEDS,
     'sidebar': DOXTR_SIDEBAR,
     'highlights': DOXTR_HIGHLIGHTS,
+    'topic': DOXTR_TOPIC,
+    'contents': DOXTR_CONTENTS,
     'toc': DOXTR_TOC,
     'bibliography': DOXTR_BIBLIOGRAPHY,
     'index': DOXTR_INDEX,
     'glossary': DOXTR_GLOSSARY,
+    'links': DOXTR_LINKS,
 }

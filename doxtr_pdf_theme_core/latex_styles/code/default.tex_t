@@ -9,12 +9,12 @@
 \providecommand{\ddCurrentCodeLang}{generic}
 
 <% for lang, conf in doxtr_code.items() %>
-\definecolor{ddcodebg_<< lang >>}{cmyk}{<< conf.content_background_color_cmyk >>}
-\definecolor{ddcodefg_<< lang >>}{cmyk}{<< conf.content_font_color_cmyk >>}
-\definecolor{ddcodetitlebg_<< lang >>}{cmyk}{<< conf.title_background_color_cmyk >>}
-\definecolor{ddcodetitlefg_<< lang >>}{cmyk}{<< conf.title_font_color_cmyk >>}
-\definecolor{ddcodeborder_<< lang >>}{cmyk}{<< conf.border_color_cmyk >>}
-\definecolor{ddcodeicon_<< lang >>}{cmyk}{<< conf.icon_color_cmyk >>}
+\definecolor{ddcodebg_<< lang >>}{rgb}{<< conf.content_background_color_cmyk >>}
+\definecolor{ddcodefg_<< lang >>}{rgb}{<< conf.content_font_color_cmyk >>}
+\definecolor{ddcodetitlebg_<< lang >>}{rgb}{<< conf.title_background_color_cmyk >>}
+\definecolor{ddcodetitlefg_<< lang >>}{rgb}{<< conf.title_font_color_cmyk >>}
+\definecolor{ddcodeborder_<< lang >>}{rgb}{<< conf.border_color_cmyk >>}
+\definecolor{ddcodeicon_<< lang >>}{rgb}{<< conf.icon_color_cmyk >>}
 
 \expandafter\def\csname ddIconCommand<< lang >>\endcsname{<< conf.icon >>}
 

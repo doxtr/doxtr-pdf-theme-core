@@ -17,11 +17,15 @@ def process_needs_ast(app, doctree, docname):
     doxtrneedboxrouter environments with proper metadata and content
     separation.
 
+    Skipped if ``doxtr_enable_needs_processor`` is False.
+
     Args:
         app: The Sphinx application object.
         doctree: The doctree to process.
         docname: The name of the document being processed.
     """
+    if not getattr(app.config, 'doxtr_enable_needs_processor', True):
+        return
     if getattr(app.builder, 'format', '') != 'latex':
         return
     

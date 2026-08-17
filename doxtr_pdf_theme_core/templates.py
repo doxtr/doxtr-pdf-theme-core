@@ -20,7 +20,8 @@ from sphinx.errors import ExtensionError
 from .core_fallbacks import (
     DEFAULT_TITLE_STYLES, DEFAULT_ADMONITION_STYLE, DEFAULT_NEED_STYLE,
     DEFAULT_CONTAINER_STYLE, DEFAULT_TABLE_STYLE, DEFAULT_FIGURE_STYLE,
-    DEFAULT_CODE_STYLE, DEFAULT_SIDEBAR_STYLE, DEFAULT_HIGHLIGHTS_STYLE
+    DEFAULT_CODE_STYLE, DEFAULT_SIDEBAR_STYLE, DEFAULT_HIGHLIGHTS_STYLE,
+    DEFAULT_TOPIC_STYLE, DEFAULT_CONTENTS_STYLE
 )
 
 __all__ = [
@@ -47,7 +48,6 @@ LATEX_STYLES_DIR = 'latex_styles'
 DEFAULT_STYLE_NAME = 'default'
 CLASSIC_STYLE_NAME = 'classic'
 GENERIC_TYPE_NAME = 'generic'
-GENERIC_TYPE_NAME = 'generic'
 
 # Mapping from style type to the subdirectory name in latex_styles/
 STYLE_TYPES: Dict[str, str] = {
@@ -61,6 +61,9 @@ STYLE_TYPES: Dict[str, str] = {
     'code': 'code',
     'sidebar': 'sidebar',
     'highlights': 'highlights',
+    'topic': 'topic',
+    'contents': 'contents',
+    'draft': 'draft',
 }
 
 # Mapping from style type to the corresponding absolute fallback constant.
@@ -76,12 +79,42 @@ STYLE_FALLBACKS: Dict[str, Callable[[str], str]] = {
     'code': lambda _: DEFAULT_CODE_STYLE,
     'sidebar': lambda _: DEFAULT_SIDEBAR_STYLE,
     'highlights': lambda _: DEFAULT_HIGHLIGHTS_STYLE,
+    'topic': lambda _: DEFAULT_TOPIC_STYLE,
+    'contents': lambda _: DEFAULT_CONTENTS_STYLE,
+    'draft': lambda _: '',          # empty string = no rendering if template missing
 }
 
 # --- TEMPLATE CACHE ---
 # Caches compiled Jinja2 template objects to avoid redundant parsing.
 # Keyed by template content string. Enabled via doxtr_cache_templates config.
 _template_cache: Dict[str, Any] = {}
+
+
+def _get_style_meta(style_type: str):
+    """Return (subdir, fallback_fn) for a style type.
+
+    Checks the static STYLE_TYPES / STYLE_FALLBACKS dicts first, then the
+    runtime registry populated by register_style_type().  The lazy import
+    of ``_custom_style_types`` avoids the circular-import that would result
+    from a top-level ``from . import _custom_style_types`` here.
+
+    Args:
+        style_type: The style type identifier (e.g. ``'admonition'``,
+                    ``'callout'``).
+
+    Returns:
+        A ``(subdir, fallback_fn)`` tuple where ``subdir`` is the
+        ``latex_styles/<subdir>/`` directory name and ``fallback_fn`` is
+        ``Callable[[str], str] | None``.
+    """
+    if style_type in STYLE_TYPES:
+        return STYLE_TYPES[style_type], STYLE_FALLBACKS.get(style_type)
+    # Lazy import to avoid circular dependency (templates → __init__ → templates)
+    from . import _custom_style_types
+    for entry in _custom_style_types:
+        if entry['name'] == style_type:
+            return entry['subdir'], entry['fallback_fn']
+    return style_type, None  # unknown type — no fallback
 
 
 def get_template_cache() -> Dict[str, Any]:
@@ -157,7 +190,7 @@ def resolve_template(
         ExtensionError: If strict_mode is True and the template cannot be found.
     """
     pkg_dir = Path(__file__).parent.resolve()
-    style_dir = STYLE_TYPES.get(style_type, style_type)
+    style_dir, fallback_fn = _get_style_meta(style_type)
     config_path_key = f'doxtr_{style_dir}_path'
     theme_key = f'{style_dir}_path'
 
@@ -225,7 +258,6 @@ def resolve_template(
             f"strict mode is enabled. No fallback available."
         )
 
-    fallback_fn = STYLE_FALLBACKS.get(style_type)
     if fallback_fn:
         logger.warning(
             f"[Doxtr Core] {style_type} style '{style_name}' not found. "

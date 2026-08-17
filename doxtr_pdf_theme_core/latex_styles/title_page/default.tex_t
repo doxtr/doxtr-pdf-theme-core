@@ -6,7 +6,7 @@
 \makeatother
 
 <% if doxtr_title_page_color %>
-\definecolor{titlepagecolor}{cmyk}{<< doxtr_title_page_color >>}
+\definecolor{titlepagecolor}{rgb}{<< doxtr_title_page_color >>}
 <% endif %>
 
 %% Define and apply the Title Page Background and Subtitle
@@ -38,9 +38,20 @@
       <% endif %>
     \end{tikzpicture}%
     <% else %>
+    <# PAGE BACKGROUND CONTRACT: Custom title page templates that use \pagecolor for a
+       solid title background MUST restore \pagecolor{ddpagebackground} when
+       doxtr_emit_pagecolor is true (dark mode OR light-mode page adaptation with
+       non-white page) instead of \nopagecolor. The ddpagebackground color is defined
+       in preamble.tex_t and must persist throughout the document. #>
     % No Image: Fall back to solid pagecolor
     \pagecolor{titlepagecolor}%
+    <% if doxtr_emit_pagecolor %>
+    % Restore the page background after the title page (dark mode or
+    % light-mode page adaptation with non-white page background).
+    \AddToHookNext{shipout/after}{\pagecolor{ddpagebackground}}%
+    <% else %>
     \AddToHookNext{shipout/after}{\nopagecolor}%
+    <% endif %>
     <% endif %>
     <% endif %>
   }%

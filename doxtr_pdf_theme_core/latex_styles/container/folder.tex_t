@@ -6,12 +6,12 @@
    - Configurable colors, fonts, frame, shadow, and title positioning
    - Title bar fills the full top area within the folder outline (drawn behind frame)
 #>
-\definecolor{ddfoldercfg<< c_name >>}{cmyk}{<< c_conf.content_font_color_cmyk >>}
-\definecolor{ddfoldercbg<< c_name >>}{cmyk}{<< c_conf.content_background_color_cmyk >>}
-\definecolor{ddfoldertfg<< c_name >>}{cmyk}{<< c_conf.title_font_color_cmyk >>}
-\definecolor{ddfoldertbg<< c_name >>}{cmyk}{<< c_conf.title_background_color_cmyk >>}
-\definecolor{ddfolderframe<< c_name >>}{cmyk}{<< c_conf.title_color_cmyk >>}
-\definecolor{ddfoldershadow<< c_name >>}{cmyk}{<< c_conf.shadow_color_cmyk >>}
+\definecolor{ddfoldercfg<< c_name >>}{rgb}{<< c_conf.content_font_color_cmyk >>}
+\definecolor{ddfoldercbg<< c_name >>}{rgb}{<< c_conf.content_background_color_cmyk >>}
+\definecolor{ddfoldertfg<< c_name >>}{rgb}{<< c_conf.title_font_color_cmyk >>}
+\definecolor{ddfoldertbg<< c_name >>}{rgb}{<< c_conf.title_background_color_cmyk >>}
+\definecolor{ddfolderframe<< c_name >>}{rgb}{<< c_conf.title_color_cmyk >>}
+\definecolor{ddfoldershadow<< c_name >>}{rgb}{<< c_conf.shadow_color_cmyk >>}
 
 <# Icon command for the title #>
 \expandafter\def\csname ddconticon<< c_name >>\endcsname{<% if c_conf.title_icon %>{<< c_conf.title_icon_font_size >>\color{ddfoldertfg<< c_name >>}<< c_conf.title_icon >>}\hspace{0.5em}<% endif %>}

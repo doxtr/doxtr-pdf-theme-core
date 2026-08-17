@@ -7,17 +7,17 @@
 \usetikzlibrary{patterns, fadings}
 
 %% 1. Table Colors
-\definecolor{ddtableheaderbg}{cmyk}{<< t_conf.header_background_color_cmyk >>}
-\definecolor{ddtableheaderfg}{cmyk}{<< t_conf.header_font_color_cmyk >>}
-\definecolor{sphinxTableRowColorOdd}{cmyk}{<< t_conf.row_color_odd_cmyk >>}
-\definecolor{sphinxTableRowColorEven}{cmyk}{<< t_conf.row_color_even_cmyk >>}
+\definecolor{ddtableheaderbg}{rgb}{<< t_conf.header_background_color_cmyk >>}
+\definecolor{ddtableheaderfg}{rgb}{<< t_conf.header_font_color_cmyk >>}
+\definecolor{sphinxTableRowColorOdd}{rgb}{<< t_conf.row_color_odd_cmyk >>}
+\definecolor{sphinxTableRowColorEven}{rgb}{<< t_conf.row_color_even_cmyk >>}
 
 %% 2. Map Table Title Colors
-\definecolor{ddconttitlefgtable}{cmyk}{<< t_conf.title_background_color_cmyk >>}
-\definecolor{ddconttitletextfgtable}{cmyk}{<< t_conf.title_font_color_cmyk >>}
+\definecolor{ddconttitlefgtable}{rgb}{<< t_conf.title_background_color_cmyk >>}
+\definecolor{ddconttitletextfgtable}{rgb}{<< t_conf.title_font_color_cmyk >>}
 
 %% 3. New Inverse Mask Color
-\definecolor{ddtablefademask}{cmyk}{<< t_conf.title_background_fade_mask_color_cmyk >>}
+\definecolor{ddtablefademask}{rgb}{<< t_conf.title_background_fade_mask_color_cmyk >>}
 
 %% Bulletproof Failsafes for Sphinx internal macros
 \colorlet{sphinxTableRowColor}{white}

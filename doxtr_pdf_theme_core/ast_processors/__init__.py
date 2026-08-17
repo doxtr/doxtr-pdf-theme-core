@@ -11,6 +11,7 @@ Each processor handles a specific type of RST/Sphinx element:
 - sidebars: Sidebar boxes with text wrapping
 - highlights: Highlights directive styling
 - needs: sphinx-needs requirement boxes
+- topics: Topic and contents directive styled boxes
 """
 from .containers import process_containers_ast
 from .tables import process_tables_ast
@@ -19,6 +20,7 @@ from .epigraphs import process_epigraph_ast
 from .sidebars import process_sidebar_ast, render_nodes_to_latex
 from .highlights import process_highlights_ast
 from .needs import process_needs_ast
+from .topics import process_topics_ast
 
 __all__ = [
     'process_containers_ast',
@@ -29,4 +31,5 @@ __all__ = [
     'render_nodes_to_latex',
     'process_highlights_ast',
     'process_needs_ast',
+    'process_topics_ast',
 ]

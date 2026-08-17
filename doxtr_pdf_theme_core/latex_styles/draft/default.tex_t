@@ -1,0 +1,62 @@
+%%% Draft Watermark — default style
+%%% Centred in the outer margin on each page side; never overlaps content.
+%%%
+%%% Positioning strategy:
+%%%   \oddsidemargin and \evensidemargin are unreliable in KOMA-Script builds
+%%%   (they can be negative). Instead we compute the outer margin widths from
+%%%   first principles using \paperwidth and \textwidth, which are always correct
+%%%   after geometry is finalised:
+%%%
+%%%     The text body left edge on any page =
+%%%       \paperwidth/2 - \textwidth/2   (for symmetric) — but we can't assume that.
+%%%
+%%%   The safest runtime approach: use a \newlength pair captured \AtBeginDocument
+%%%   after all geometry packages have run:
+%%%
+%%%     \dddoddleftmargin  = actual left  margin on odd  pages
+%%%     \dddevenleftmargin = actual right margin on even pages (from page.east)
+%%%
+%%%   Both are measured from their respective page edge to the text body edge,
+%%%   and the watermark node is placed at the midpoint of each.
+\newlength{\dddoddmarginwidth}
+\newlength{\dddevenmarginwidth}
+\AtBeginDocument{%
+  % On odd pages:  left margin = distance from page left to text left
+  %   = 1in + \hoffset + \oddsidemargin  (standard LaTeX formula)
+  % We clamp to a minimum of 1cm so a near-zero or negative value still
+  % produces a visible, non-overlapping watermark.
+  \setlength{\dddoddmarginwidth}{1in}%
+  \addtolength{\dddoddmarginwidth}{\hoffset}%
+  \addtolength{\dddoddmarginwidth}{\oddsidemargin}%
+  \ifdim\dddoddmarginwidth<1cm\setlength{\dddoddmarginwidth}{1cm}\fi
+  % On even pages: right margin = distance from text right to page right
+  %   = \paperwidth - (1in + \hoffset + \evensidemargin + \textwidth)
+  \setlength{\dddevenmarginwidth}{\paperwidth}%
+  \addtolength{\dddevenmarginwidth}{-1in}%
+  \addtolength{\dddevenmarginwidth}{-\hoffset}%
+  \addtolength{\dddevenmarginwidth}{-\evensidemargin}%
+  \addtolength{\dddevenmarginwidth}{-\textwidth}%
+  \ifdim\dddevenmarginwidth<1cm\setlength{\dddevenmarginwidth}{1cm}\fi
+}
+\definecolor{dddraftcolor}{rgb}{<< doxtr_draft_color_cmyk >>}
+\AddToHook{shipout/background}{%
+  \begin{tikzpicture}[remember picture, overlay]
+  \ifodd\value{page}
+    \coordinate (ddmarginmid) at
+      ([xshift={0.5\dddoddmarginwidth}]current page.west);
+    \node[rotate=90, anchor=center,
+          text opacity=<< doxtr_draft_opacity >>,
+          text=dddraftcolor,
+          font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>]
+      at (ddmarginmid) {<< doxtr_draft_text >>};
+  \else
+    \coordinate (ddmarginmid) at
+      ([xshift={-0.5\dddevenmarginwidth}]current page.east);
+    \node[rotate=-90, anchor=center,
+          text opacity=<< doxtr_draft_opacity >>,
+          text=dddraftcolor,
+          font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>]
+      at (ddmarginmid) {<< doxtr_draft_text >>};
+  \fi
+  \end{tikzpicture}%
+}

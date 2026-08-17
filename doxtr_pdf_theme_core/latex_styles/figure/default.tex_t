@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %% DOXTR CORE - DEFAULT FIGURE CAPTION STYLE
 %% -------------------------------------------------------------------
-\definecolor{ddfigcaptionbg}{cmyk}{<< f_conf.caption_background_color_cmyk >>}
-\definecolor{ddfigcaptionfg}{cmyk}{<< f_conf.caption_font_color_cmyk >>}
+\definecolor{ddfigcaptionbg}{rgb}{<< f_conf.caption_background_color_cmyk >>}
+\definecolor{ddfigcaptionfg}{rgb}{<< f_conf.caption_font_color_cmyk >>}
 
 %% Auto-calculate a beautiful accent color by mixing the text and background
 \colorlet{ddfigaccent}{ddfigcaptionfg!60!ddfigcaptionbg}

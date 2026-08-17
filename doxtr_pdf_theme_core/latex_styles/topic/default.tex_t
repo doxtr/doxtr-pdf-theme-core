@@ -1,0 +1,64 @@
+<# Default topic style template — tcolorbox with thick rule and title strip.
+   Supports two title positions:
+     'left'  — thick left rule with title rotated 90° (vertical strip)
+     'top'   — thick top rule with title rendered horizontally
+
+   Long titles wrap within the available space automatically.
+
+   Context variables:
+     tp_conf  — merged topic configuration dict with _cmyk color suffixes
+     doxtr_page_bg_cmyk — page background in RGB floats
+#>
+
+\definecolor{ddtopictitlebg}{rgb}{<< tp_conf.title_background_color_cmyk >>}
+\definecolor{ddtopictitlefg}{rgb}{<< tp_conf.title_font_color_cmyk >>}
+\definecolor{ddtopiccontentbg}{rgb}{<< tp_conf.content_background_color_cmyk >>}
+\definecolor{ddtopiccontentfg}{rgb}{<< tp_conf.content_font_color_cmyk >>}
+\definecolor{ddtopicborder}{rgb}{<< tp_conf.border_color_cmyk >>}
+
+<% set pos = tp_conf.get('title_position', 'left') %>
+
+\makeatletter
+\newtcolorbox{doxtrtopic}[1]{%
+  enhanced, breakable, parbox=false,
+  boxsep=3pt,
+  arc=1.25ex,
+  colback=ddtopiccontentbg,
+  colframe=ddtopicborder,
+  coltext=ddtopiccontentfg,
+  boxrule=<< tp_conf.border_width >>,
+<% if pos == 'top' %>
+  %% --- Top strip mode ---
+  toprule=18pt,
+  fontupper=<% if tp_conf.content_font %>\fontspec{<< tp_conf.content_font >>}<% endif %><< tp_conf.content_font_size >>,
+  before skip=<< tp_conf.before_skip >>,
+  after skip=<< tp_conf.after_skip >>,
+  notitle,
+  overlay unbroken and first={%
+    \node[anchor=center,
+          font=<% if tp_conf.title_font %>\fontspec{<< tp_conf.title_font >>}<% endif %><< tp_conf.title_font_size >>,
+          text width=\dimexpr\tcb@width-2cm\relax,
+          align=center,
+          ddtopictitlefg]
+      at ([yshift=-9pt]frame.north) {<% if tp_conf.title_icon %><< tp_conf.title_icon >>\hspace{0.5em}<% endif %>#1};
+  },
+<% else %>
+  %% --- Left strip mode (default) ---
+  leftrule=18pt,
+  fontupper=<% if tp_conf.content_font %>\fontspec{<< tp_conf.content_font >>}<% endif %><< tp_conf.content_font_size >>,
+  before skip=<< tp_conf.before_skip >>,
+  after skip=<< tp_conf.after_skip >>,
+  notitle,
+  overlay unbroken and first={%
+    \node[rotate=90,
+          anchor=south,
+          font=<% if tp_conf.title_font %>\fontspec{<< tp_conf.title_font >>}<% endif %><< tp_conf.title_font_size >>,
+          text width=\dimexpr\tcb@height-2ex\relax,
+          align=center,
+          yshift=-18pt,
+          ddtopictitlefg]
+      at (frame.west) {<% if tp_conf.title_icon %><< tp_conf.title_icon >>\hspace{0.5em}<% endif %>#1};
+  },
+<% endif %>
+}
+\makeatother

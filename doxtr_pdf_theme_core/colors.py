@@ -1,7 +1,10 @@
-"""CMYK color preparation helpers for LaTeX preamble generation.
+"""Color preparation helpers for LaTeX preamble generation (RGB float output).
 
-This module provides utilities for converting hex colors to CMYK format
-suitable for LaTeX, with safe fallbacks to prevent build failures.
+This module provides utilities for converting hex colors to RGB float format
+suitable for LaTeX's ``{rgb}`` color model, with safe fallbacks to prevent
+build failures. All colors in the document use the same RGB colorspace as
+embedded raster images, preventing visible seams in PDF viewers that handle
+CMYK and RGB colorspace conversions differently.
 
 Error Handling Contract (Two-Tier System)
 -----------------------------------------
@@ -20,32 +23,41 @@ This module follows a two-tier error handling pattern:
 
 The `safe_cmyk()` function is the primary boundary function for color values
 that will be embedded in LaTeX. All color values destined for LaTeX output
-should pass through `safe_cmyk()` to ensure valid CMYK strings.
+should pass through `safe_cmyk()` to ensure valid RGB float strings.
 """
 from typing import Optional, List, Tuple
 from sphinx.util import logging
 
-from .utils import hex_to_cmyk_string, get_highest_contrast_color
+from .utils import hex_to_cmyk_string, hex_to_rgb_floats, get_highest_contrast_color
 
 __all__ = [
     'safe_cmyk',
+    'safe_rgb',
     'prepare_cmyk_colors',
     'CONTAINER_COLOR_KEYS',
     'TABLE_COLOR_KEYS',
     'FIGURE_COLOR_KEYS',
     'CODE_COLOR_KEYS',
     'SIDEBAR_COLOR_KEYS',
+    'TOPIC_COLOR_KEYS',
+    'CONTENTS_COLOR_KEYS',
 ]
 
 logger = logging.getLogger(__name__)
 
 
-def safe_cmyk(color_val: Optional[str], default: str = '0.000, 0.000, 0.000, 1.000') -> str:
-    """Convert a hex color to CMYK, returning a safe default on any failure.
+def safe_cmyk(color_val: Optional[str], default: str = '0.000, 0.000, 0.000') -> str:
+    """Convert a hex color to RGB float format for LaTeX ``\\definecolor{}{rgb}{}``.
+
+    Despite the legacy name ``safe_cmyk``, this function now outputs RGB float
+    values (r, g, b in [0.0, 1.0]) for use with LaTeX's ``{rgb}`` color model.
+    This ensures all document colors share the same colorspace as embedded
+    raster images, preventing visible seams in PDF viewers that handle CMYK
+    and RGB colorspace conversions differently.
 
     This is the PRIMARY BOUNDARY FUNCTION for color values in LaTeX output.
     It implements the "never fail" contract:
-    - Always returns a valid CMYK string
+    - Always returns a valid RGB float string
     - NEVER returns None
     - NEVER raises exceptions
     - Logs warnings on invalid input for debugging
@@ -55,31 +67,33 @@ def safe_cmyk(color_val: Optional[str], default: str = '0.000, 0.000, 0.000, 1.0
     with safe_cmyk() before passing to LaTeX templates.
 
     Args:
-        color_val: A hex color string (e.g. '#FF0000'), a CMYK string,
-                   or None/empty.
-        default: CMYK fallback if conversion fails. Defaults to black.
+        color_val: A hex color string (e.g. '#FF0000'), an existing RGB float
+                   string (3 comma-separated values), or None/empty.
+        default: RGB float fallback if conversion fails. Defaults to black.
 
     Returns:
-        A valid CMYK color string suitable for LaTeX. Never None.
+        A valid RGB float color string suitable for LaTeX ``{rgb}`` model.
+        Never None.
 
     Examples:
         >>> safe_cmyk('#FF0000')
-        '0.000, 1.000, 1.000, 0.000'
+        '1.000, 0.000, 0.000'
         >>> safe_cmyk(None)
-        '0.000, 0.000, 0.000, 1.000'
-        >>> safe_cmyk('invalid')
-        '0.000, 0.000, 0.000, 1.000'  # logs warning
+        '0.000, 0.000, 0.000'
+        >>> safe_cmyk('#242424')
+        '0.141, 0.141, 0.141'
     """
     if not color_val:
         return default
-    # If value is already a CMYK string (contains commas), pass through
+    # If value is already a float string (contains commas), pass through.
+    # Handles both 3-value (rgb) and legacy 4-value (cmyk) strings.
     if isinstance(color_val, str) and ',' in color_val:
         return color_val
     try:
-        c = hex_to_cmyk_string(color_val)
-        return c if c and str(c).lower() != 'none' else default
+        r, g, b = hex_to_rgb_floats(color_val)
+        return f'{r:.3f}, {g:.3f}, {b:.3f}'
     except Exception as e:
-        logger.warning(f"[Doxtr Core] Color conversion failed for '{color_val}': {e}. Using default CMYK.")
+        logger.warning(f"[Doxtr Core] Color conversion failed for '{color_val}': {e}. Using default.")
         return default
 
 
@@ -133,6 +147,28 @@ SIDEBAR_COLOR_KEYS: List[Tuple[str, str]] = [
     ('subtitle_font_color', '#306090'),
 ]
 
+TOPIC_COLOR_KEYS: List[Tuple[str, str]] = [
+    ('title_background_color', '#1E3A6E'),
+    ('title_font_color', '#FFFFFF'),
+    ('title_icon_color', '#FFFFFF'),
+    ('content_background_color', '#F0F4FA'),
+    ('content_font_color', '#1A1A2E'),
+    ('border_color', '#3A5A8E'),
+    ('bottom_frame_color', '#1E3A6E'),
+    ('cutaway_fill_color', '#FFFFFF'),
+]
+
+CONTENTS_COLOR_KEYS: List[Tuple[str, str]] = [
+    ('title_background_color', '#1E3A6E'),
+    ('title_font_color', '#FFFFFF'),
+    ('title_icon_color', '#FFFFFF'),
+    ('content_background_color', '#F0F4FA'),
+    ('content_font_color', '#1A1A2E'),
+    ('border_color', '#3A5A8E'),
+    ('bottom_frame_color', '#1E3A6E'),
+    ('cutaway_fill_color', '#FFFFFF'),
+]
+
 
 def prepare_cmyk_colors(conf: dict, color_key_defaults: List[Tuple[str, str]]) -> None:
     """Add `_cmyk` suffixed entries to conf for each (key, default) pair.
@@ -156,3 +192,9 @@ def prepare_cmyk_colors(conf: dict, color_key_defaults: List[Tuple[str, str]]) -
         cmyk_key = f'{key}_cmyk'
         val = conf.get(key) or default
         conf[cmyk_key] = safe_cmyk(val)
+
+
+# Historical naming: safe_cmyk() actually produces RGB floats, not CMYK.
+# The name dates from when the extension used CMYK output. Adding this alias
+# for clarity in new code while preserving backward compatibility.
+safe_rgb = safe_cmyk

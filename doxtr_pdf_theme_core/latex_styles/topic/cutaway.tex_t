@@ -1,0 +1,105 @@
+<# Default topic style template — tcolorbox with 45° cutaway corners.
+   Top-right cutaway on title bar, bottom-left cutaway on thick bottom frame.
+   Replaces Sphinx's sphinxShadowBox for topic directives.
+
+   Context variables:
+     tp_conf  — merged topic configuration dict with _cmyk color suffixes
+     doxtr_page_bg_cmyk — page background in RGB floats for cutaway fills
+#>
+
+\definecolor{ddtopictitlebg}{rgb}{<< tp_conf.title_background_color_cmyk >>}
+\definecolor{ddtopictitlefg}{rgb}{<< tp_conf.title_font_color_cmyk >>}
+\definecolor{ddtopiccontentbg}{rgb}{<< tp_conf.content_background_color_cmyk >>}
+\definecolor{ddtopiccontentfg}{rgb}{<< tp_conf.content_font_color_cmyk >>}
+\definecolor{ddtopicborder}{rgb}{<< tp_conf.border_color_cmyk >>}
+\definecolor{ddtopicframebg}{rgb}{<< tp_conf.bottom_frame_color_cmyk >>}
+\definecolor{ddtopicouterbg}{rgb}{<< tp_conf.cutaway_fill_color_cmyk >>}
+
+<% set cd = tp_conf.cutaway_depth %>
+<% set bfh = tp_conf.bottom_frame_height %>
+
+\makeatletter
+\newtcolorbox{doxtrtopic}[1]{%
+  enhanced, breakable, parbox=false,
+  colback=ddtopiccontentbg,
+  colframe=ddtopicborder,
+  coltext=ddtopiccontentfg,
+  fontupper=<% if tp_conf.content_font %>\fontspec{<< tp_conf.content_font >>}<% endif %><< tp_conf.content_font_size >>,
+  boxrule=<< tp_conf.border_width >>,
+  arc=0pt,
+  sharp corners,
+  before skip=<< tp_conf.before_skip >>,
+  after skip=<< tp_conf.after_skip >>,
+  %% Title configuration
+  coltitle=ddtopictitlefg,
+  colbacktitle=ddtopictitlebg,
+  fonttitle=<% if tp_conf.title_font %>\fontspec{<< tp_conf.title_font >>}<% endif %><< tp_conf.title_font_size >>,
+  <% if tp_conf.title_icon %>title={<< tp_conf.title_icon >>\hspace{0.5em}#1},<% else %>title={#1},<% endif %>
+  IfBlankTF={#1}{notitle}{},
+  %% Right padding in title and content to avoid text entering cutaway zone
+  righttitle=\dimexpr << cd >> + 4pt\relax,
+  right*=\dimexpr << cd >> + 4pt\relax,
+  %% Bottom padding for the thick bottom frame
+  bottom=\dimexpr << bfh >> + 2pt\relax,
+  %% ----------------------------------------------------------------
+  %% OVERLAY UNBROKEN: Both top-right cutaway and bottom frame+cutaway.
+  %% Uses a dedicated 'overlay unbroken' key so that 'overlay first' and
+  %% 'overlay last' do not conflict for the unbroken state.
+  overlay unbroken={%
+    %% --- Top-right cutaway ---
+    %% Compute total title area height: frame border + padded title content
+    \edef\doxtr@cutdepth{\the\dimexpr \kvtcb@top@rule@stand + \tcb@h@padtitle\relax}%
+    %% Fill triangle with outer background to create angled title bar right edge.
+    %% Extend corner vertex by half the border width to fully cover the frame edge.
+    \fill[ddtopicouterbg]
+      ([xshift=0.4pt, yshift=0.4pt]frame.north east)
+      -- ([xshift=-\doxtr@cutdepth]frame.north east)
+      -- ([yshift=-\doxtr@cutdepth]frame.north east)
+      -- cycle;
+    %% Diagonal border line along the hypotenuse
+    \draw[ddtopicborder, line width=<< tp_conf.border_width >>]
+      ([xshift=-\doxtr@cutdepth]frame.north east)
+      -- ([yshift=-\doxtr@cutdepth]frame.north east);
+    %% --- Bottom frame + bottom-left cutaway ---
+    \fill[ddtopicframebg]
+      ([yshift=\dimexpr << bfh >> + << tp_conf.border_width >>\relax]frame.south west)
+      -- ([yshift=\dimexpr << bfh >> + << tp_conf.border_width >>\relax]frame.south east)
+      -- (frame.south east)
+      -- ([xshift=<< bfh >>]frame.south west)
+      -- cycle;
+    \fill[ddtopicouterbg]
+      (frame.south west)
+      -- ([xshift=<< bfh >>]frame.south west)
+      -- ([yshift=<< bfh >>]frame.south west)
+      -- cycle;
+  },
+  %% ----------------------------------------------------------------
+  %% OVERLAY FIRST: Top-right cutaway only (first fragment of a broken box).
+  overlay first={%
+    \edef\doxtr@cutdepth{\the\dimexpr \kvtcb@top@rule@stand + \tcb@h@padtitle\relax}%
+    \fill[ddtopicouterbg]
+      (frame.north east)
+      -- ([xshift=-\doxtr@cutdepth]frame.north east)
+      -- ([yshift=-\doxtr@cutdepth]frame.north east)
+      -- cycle;
+    \draw[ddtopicborder, line width=<< tp_conf.border_width >>]
+      ([xshift=-\doxtr@cutdepth]frame.north east)
+      -- ([yshift=-\doxtr@cutdepth]frame.north east);
+  },
+  %% ----------------------------------------------------------------
+  %% OVERLAY LAST: Bottom frame + bottom-left cutaway (last fragment of a broken box).
+  overlay last={%
+    \fill[ddtopicframebg]
+      ([yshift=\dimexpr << bfh >> + << tp_conf.border_width >>\relax]frame.south west)
+      -- ([yshift=\dimexpr << bfh >> + << tp_conf.border_width >>\relax]frame.south east)
+      -- (frame.south east)
+      -- ([xshift=<< bfh >>]frame.south west)
+      -- cycle;
+    \fill[ddtopicouterbg]
+      (frame.south west)
+      -- ([xshift=<< bfh >>]frame.south west)
+      -- ([yshift=<< bfh >>]frame.south west)
+      -- cycle;
+  },
+}
+\makeatother

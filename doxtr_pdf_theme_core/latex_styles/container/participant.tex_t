@@ -5,11 +5,11 @@
    - Configurable colors, fonts, frame, and title geometry
    - title_position: 'left', 'center', 'right', or arbitrary LaTeX dimension
 #>
-\definecolor{ddparttitlefg<< c_name >>}{cmyk}{<< c_conf.title_color_cmyk >>}
-\definecolor{ddparttitletextfg<< c_name >>}{cmyk}{<< c_conf.title_font_color_cmyk >>}
-\definecolor{ddparticonfg<< c_name >>}{cmyk}{<< c_conf.title_icon_color_cmyk >>}
-\definecolor{ddpartcontentfg<< c_name >>}{cmyk}{<< c_conf.content_font_color_cmyk >>}
-\definecolor{ddpartcontentbg<< c_name >>}{cmyk}{<< c_conf.content_background_color_cmyk >>}
+\definecolor{ddparttitlefg<< c_name >>}{rgb}{<< c_conf.title_color_cmyk >>}
+\definecolor{ddparttitletextfg<< c_name >>}{rgb}{<< c_conf.title_font_color_cmyk >>}
+\definecolor{ddparticonfg<< c_name >>}{rgb}{<< c_conf.title_icon_color_cmyk >>}
+\definecolor{ddpartcontentfg<< c_name >>}{rgb}{<< c_conf.content_font_color_cmyk >>}
+\definecolor{ddpartcontentbg<< c_name >>}{rgb}{<< c_conf.content_background_color_cmyk >>}
 
 <# Icon command for the title #>
 \expandafter\def\csname ddconticon<< c_name >>\endcsname{<% if c_conf.title_icon %>{<< c_conf.title_icon_font_size >>\color{ddparticonfg<< c_name >>}<< c_conf.title_icon >>}\hspace{0.5em}<% endif %>}

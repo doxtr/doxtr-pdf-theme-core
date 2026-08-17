@@ -59,31 +59,30 @@
 \ohead{\headmark}
 %% Starred commands mirror each other perfectly on both plain and scrheadings styles
 \ofoot*{\pagemark}
+
+%% --- Dark Mode: Page Background and Body Text Color ---
+%% When dark mode is active or page adaptation requires a non-white page,
+%% set the page background color and adjust the default body text color.
+<% if doxtr_emit_pagecolor %>
+\definecolor{ddpagebackground}{rgb}{<< doxtr_page_bg_cmyk >>}
+\definecolor{ddbodytextcolor}{rgb}{<< doxtr_body_text_color_cmyk >>}
+\pagecolor{ddpagebackground}
+\color{ddbodytextcolor}
+\AtBeginDocument{\color{ddbodytextcolor}}
+<% endif %>
 <% if doxtr_footer_logo %>
 \ifoot*{\includegraphics[height=<< doxtr_footer_logo_height >>, keepaspectratio]{<< doxtr_footer_logo >>}}
 <% endif %>
 \pagestyle{scrheadings}
 
 %%% Draft Watermark
-<% if doxtr_draft_text %>
-\definecolor{dddraftcolor}{cmyk}{<< doxtr_draft_color_cmyk >>}
-\AddToHook{shipout/background}{%
-  \begin{tikzpicture}[remember picture, overlay]
-  
-  \ifodd\value{page}
-      \node[rotate=90, anchor=center, text opacity=<< doxtr_draft_opacity >>, text=dddraftcolor, font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>] at ([xshift=3em]current page.west) {<< doxtr_draft_text >>};
-  \else
-      \node[rotate=-90, anchor=center, text opacity=<< doxtr_draft_opacity >>, text=dddraftcolor, font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>] at ([xshift=-3em]current page.east) {<< doxtr_draft_text >>};
-  \fi
-  \end{tikzpicture}%
-}
-<% endif %>
+<< doxtr_rendered_draft >>
 
 %%% Epigraph / Dictum Configuration Styles
 \makeatletter
 <% for level in ['epigraph', 'part_epigraph', 'chapter_epigraph', 'section_epigraph', 'subsection_epigraph', 'subsubsection_epigraph'] %>
-<% if v['doxtr_' ~ level ~ '_color'] %>\definecolor{dd<< level | replace('_', '') >>color}{cmyk}{<< v['doxtr_' ~ level ~ '_color'] >>}<% endif %>
-<% if v['doxtr_' ~ level ~ '_author_color'] %>\definecolor{dd<< level | replace('_', '') >>authorcolor}{cmyk}{<< v['doxtr_' ~ level ~ '_author_color'] >>}<% endif %>
+<% if v['doxtr_' ~ level ~ '_color'] %>\definecolor{dd<< level | replace('_', '') >>color}{rgb}{<< v['doxtr_' ~ level ~ '_color'] >>}<% endif %>
+<% if v['doxtr_' ~ level ~ '_author_color'] %>\definecolor{dd<< level | replace('_', '') >>authorcolor}{rgb}{<< v['doxtr_' ~ level ~ '_author_color'] >>}<% endif %>
 
 <% set macro_name = 'generic' if level == 'epigraph' else level | replace('_epigraph', '') %>
 \expandafter\def\csname ddepigraph@<< macro_name >>\endcsname{%
@@ -98,8 +97,8 @@
 <% endfor %>
 
 <% for p_num, bg_conf in doxtr_part_backgrounds.items() %>
-  <% if bg_conf.epigraph_color_cmyk %>\definecolor{ddpartepigraph<< p_num >>color}{cmyk}{<< bg_conf.epigraph_color_cmyk >>}<% endif %>
-  <% if bg_conf.epigraph_author_color_cmyk %>\definecolor{ddpartepigraphauthor<< p_num >>color}{cmyk}{<< bg_conf.epigraph_author_color_cmyk >>}<% endif %>
+  <% if bg_conf.epigraph_color_cmyk %>\definecolor{ddpartepigraph<< p_num >>color}{rgb}{<< bg_conf.epigraph_color_cmyk >>}<% endif %>
+  <% if bg_conf.epigraph_author_color_cmyk %>\definecolor{ddpartepigraphauthor<< p_num >>color}{rgb}{<< bg_conf.epigraph_author_color_cmyk >>}<% endif %>
   \expandafter\def\csname ddepigraph@part@<< p_num >>\endcsname{%
     <% if bg_conf.epigraph_color_cmyk %>\addtokomafont{dictumtext}{\color{ddpartepigraph<< p_num >>color}}<% endif %>
     <% if bg_conf.epigraph_author_color_cmyk %>\addtokomafont{dictumauthor}{\color{ddpartepigraphauthor<< p_num >>color}}<% endif %>
@@ -122,11 +121,11 @@
 <% if doxtr_part_backgrounds %>
 %% Pre-define colors to prevent pgfkeys errors
 <% for part_num, bg_conf in doxtr_part_backgrounds.items() %>
-  <% if bg_conf.background_color_cmyk %>\definecolor{ddpartbg<< part_num >>}{cmyk}{<< bg_conf.background_color_cmyk >>}<% endif %>
-  <% if bg_conf.font_color_cmyk %>\definecolor{ddpart<< part_num >>color}{cmyk}{<< bg_conf.font_color_cmyk >>}<% endif %>
-  <% if bg_conf.number_color_cmyk %>\definecolor{ddpart<< part_num >>numbercolor}{cmyk}{<< bg_conf.number_color_cmyk >>}<% endif %>
-  <% if bg_conf.number_part_color_cmyk %>\definecolor{ddpart<< part_num >>numberpartcolor}{cmyk}{<< bg_conf.number_part_color_cmyk >>}<% endif %>
-  <% if bg_conf.number_number_color_cmyk %>\definecolor{ddpart<< part_num >>numbernumbercolor}{cmyk}{<< bg_conf.number_number_color_cmyk >>}<% endif %>
+  <% if bg_conf.background_color_cmyk %>\definecolor{ddpartbg<< part_num >>}{rgb}{<< bg_conf.background_color_cmyk >>}<% endif %>
+  <% if bg_conf.font_color_cmyk %>\definecolor{ddpart<< part_num >>color}{rgb}{<< bg_conf.font_color_cmyk >>}<% endif %>
+  <% if bg_conf.number_color_cmyk %>\definecolor{ddpart<< part_num >>numbercolor}{rgb}{<< bg_conf.number_color_cmyk >>}<% endif %>
+  <% if bg_conf.number_part_color_cmyk %>\definecolor{ddpart<< part_num >>numberpartcolor}{rgb}{<< bg_conf.number_part_color_cmyk >>}<% endif %>
+  <% if bg_conf.number_number_color_cmyk %>\definecolor{ddpart<< part_num >>numbernumbercolor}{rgb}{<< bg_conf.number_number_color_cmyk >>}<% endif %>
 <% endfor %>
 <% endif %>
 
@@ -256,33 +255,33 @@
 \makeatother
 
 %% Define Universal Element Colors
-<% if doxtr_title_color %>\definecolor{ddtitlecolor}{cmyk}{<< doxtr_title_color >>}<% endif %>
-<% if doxtr_subtitle_color %>\definecolor{ddsubtitlecolor}{cmyk}{<< doxtr_subtitle_color >>}<% endif %>
-<% if doxtr_author_color %>\definecolor{ddauthorcolor}{cmyk}{<< doxtr_author_color >>}<% endif %>
-<% if doxtr_date_color %>\definecolor{dddatecolor}{cmyk}{<< doxtr_date_color >>}<% endif %>
-<% if doxtr_release_version_color %>\definecolor{ddreleaseversioncolor}{cmyk}{<< doxtr_release_version_color >>}<% endif %>
-<% if doxtr_part_color %>\definecolor{ddpartcolor}{cmyk}{<< doxtr_part_color >>}<% endif %>
-<% if doxtr_chapter_color %>\definecolor{ddchaptercolor}{cmyk}{<< doxtr_chapter_color >>}<% endif %>
-<% if doxtr_section_color %>\definecolor{ddsectioncolor}{cmyk}{<< doxtr_section_color >>}<% endif %>
-<% if doxtr_subsection_color %>\definecolor{ddsubsectioncolor}{cmyk}{<< doxtr_subsection_color >>}<% endif %>
-<% if doxtr_subsubsection_color %>\definecolor{ddsubsubsectioncolor}{cmyk}{<< doxtr_subsubsection_color >>}<% endif %>
-<% if doxtr_rubric_color %>\definecolor{ddrubriccolor}{cmyk}{<< doxtr_rubric_color >>}<% endif %>
-<% if doxtr_epigraph_color %>\definecolor{ddepigraphcolor}{cmyk}{<< doxtr_epigraph_color >>}<% endif %>
-<% if doxtr_epigraph_author_color %>\definecolor{ddepigraphauthorcolor}{cmyk}{<< doxtr_epigraph_author_color >>}<% endif %>
+<% if doxtr_title_color %>\definecolor{ddtitlecolor}{rgb}{<< doxtr_title_color >>}<% endif %>
+<% if doxtr_subtitle_color %>\definecolor{ddsubtitlecolor}{rgb}{<< doxtr_subtitle_color >>}<% endif %>
+<% if doxtr_author_color %>\definecolor{ddauthorcolor}{rgb}{<< doxtr_author_color >>}<% endif %>
+<% if doxtr_date_color %>\definecolor{dddatecolor}{rgb}{<< doxtr_date_color >>}<% endif %>
+<% if doxtr_release_version_color %>\definecolor{ddreleaseversioncolor}{rgb}{<< doxtr_release_version_color >>}<% endif %>
+<% if doxtr_part_color %>\definecolor{ddpartcolor}{rgb}{<< doxtr_part_color >>}<% endif %>
+<% if doxtr_chapter_color %>\definecolor{ddchaptercolor}{rgb}{<< doxtr_chapter_color >>}<% endif %>
+<% if doxtr_section_color %>\definecolor{ddsectioncolor}{rgb}{<< doxtr_section_color >>}<% endif %>
+<% if doxtr_subsection_color %>\definecolor{ddsubsectioncolor}{rgb}{<< doxtr_subsection_color >>}<% endif %>
+<% if doxtr_subsubsection_color %>\definecolor{ddsubsubsectioncolor}{rgb}{<< doxtr_subsubsection_color >>}<% endif %>
+<% if doxtr_rubric_color %>\definecolor{ddrubriccolor}{rgb}{<< doxtr_rubric_color >>}<% endif %>
+<% if doxtr_epigraph_color %>\definecolor{ddepigraphcolor}{rgb}{<< doxtr_epigraph_color >>}<% endif %>
+<% if doxtr_epigraph_author_color %>\definecolor{ddepigraphauthorcolor}{rgb}{<< doxtr_epigraph_author_color >>}<% endif %>
 
 %% ----------------------------------------------------
 %% SAFE FALLBACK COLOR INHERITANCE
 %% ----------------------------------------------------
-<% if doxtr_part_number_color %>\definecolor{ddpartnumbercolor}{cmyk}{<< doxtr_part_number_color >>}<% else %>\definecolor{ddpartnumbercolor}{cmyk}{0, 0, 0, 1}<% endif %>
-<% if doxtr_part_number_part_color %>\definecolor{ddpartnumberpartcolor}{cmyk}{<< doxtr_part_number_part_color >>}<% else %>\colorlet{ddpartnumberpartcolor}{ddpartnumbercolor}<% endif %>
-<% if doxtr_part_number_number_color %>\definecolor{ddpartnumbernumbercolor}{cmyk}{<< doxtr_part_number_number_color >>}<% else %>\colorlet{ddpartnumbernumbercolor}{ddpartnumbercolor}<% endif %>
+<% if doxtr_part_number_color %>\definecolor{ddpartnumbercolor}{rgb}{<< doxtr_part_number_color >>}<% else %>\definecolor{ddpartnumbercolor}{rgb}{0, 0, 0, 1}<% endif %>
+<% if doxtr_part_number_part_color %>\definecolor{ddpartnumberpartcolor}{rgb}{<< doxtr_part_number_part_color >>}<% else %>\colorlet{ddpartnumberpartcolor}{ddpartnumbercolor}<% endif %>
+<% if doxtr_part_number_number_color %>\definecolor{ddpartnumbernumbercolor}{rgb}{<< doxtr_part_number_number_color >>}<% else %>\colorlet{ddpartnumbernumbercolor}{ddpartnumbercolor}<% endif %>
 
-<% if doxtr_chapter_number_color %>\definecolor{ddchapternumbercolor}{cmyk}{<< doxtr_chapter_number_color >>}<% else %>\colorlet{ddchapternumbercolor}{ddpartnumbercolor}<% endif %>
-<% if doxtr_chapter_line_color %>\definecolor{ddchapterlinecolor}{cmyk}{<< doxtr_chapter_line_color >>}<% else %>\colorlet{ddchapterlinecolor}{ddchapternumbercolor!45}<% endif %>
+<% if doxtr_chapter_number_color %>\definecolor{ddchapternumbercolor}{rgb}{<< doxtr_chapter_number_color >>}<% else %>\colorlet{ddchapternumbercolor}{ddpartnumbercolor}<% endif %>
+<% if doxtr_chapter_line_color %>\definecolor{ddchapterlinecolor}{rgb}{<< doxtr_chapter_line_color >>}<% else %>\colorlet{ddchapterlinecolor}{ddchapternumbercolor!45}<% endif %>
 
-<% if doxtr_section_number_color %>\definecolor{ddsectionnumbercolor}{cmyk}{<< doxtr_section_number_color >>}<% else %>\colorlet{ddsectionnumbercolor}{ddchapternumbercolor}<% endif %>
-<% if doxtr_subsection_number_color %>\definecolor{ddsubsectionnumbercolor}{cmyk}{<< doxtr_subsection_number_color >>}<% else %>\colorlet{ddsubsectionnumbercolor}{ddsectionnumbercolor}<% endif %>
-<% if doxtr_subsubsection_number_color %>\definecolor{ddsubsubsectionnumbercolor}{cmyk}{<< doxtr_subsubsection_number_color >>}<% else %>\colorlet{ddsubsubsectionnumbercolor}{ddsubsectionnumbercolor}<% endif %>
+<% if doxtr_section_number_color %>\definecolor{ddsectionnumbercolor}{rgb}{<< doxtr_section_number_color >>}<% else %>\colorlet{ddsectionnumbercolor}{ddchapternumbercolor}<% endif %>
+<% if doxtr_subsection_number_color %>\definecolor{ddsubsectionnumbercolor}{rgb}{<< doxtr_subsection_number_color >>}<% else %>\colorlet{ddsubsectionnumbercolor}{ddsectionnumbercolor}<% endif %>
+<% if doxtr_subsubsection_number_color %>\definecolor{ddsubsubsectionnumbercolor}{rgb}{<< doxtr_subsubsection_number_color >>}<% else %>\colorlet{ddsubsubsectionnumbercolor}{ddsubsectionnumbercolor}<% endif %>
 
 %% Apply Universal Fonts, Sizes, and Colors to KOMA-Script Elements
 <% if doxtr_title_font or doxtr_title_color or doxtr_title_size %>
@@ -346,6 +345,64 @@
 %% Failsafe for lower KOMA hooks to prevent crash if undefined
 \newkomafont{paragraphnumber}{}
 \newkomafont{subparagraphnumber}{}
+
+%% ----------------------------------------------------
+%% SECTION NUMBER X-HEIGHT SCALING (number_match_title_xheight)
+%% When enabled, overrides the number font size so its cap height
+%% matches the x-height of the title font at that level.
+%% Uses \directlua for floating-point arithmetic (LuaLaTeX required).
+%% Both measurement and \setkomafont run inside \AtBeginDocument because
+%% fontspec fonts are not loaded at preamble time (\settoheight returns 0).
+%% \AtBeginDocument fires after all preamble code and before the first
+%% heading is typeset, so \setkomafont reliably overrides \addtokomafont.
+%% ----------------------------------------------------
+<% if doxtr_section_number_match_title_xheight or doxtr_subsection_number_match_title_xheight or doxtr_subsubsection_number_match_title_xheight %>
+\makeatletter
+\newdimen\doxtr@xhsc@xh
+\newdimen\doxtr@xhsc@ch
+
+\AtBeginDocument{%
+<% for el in ['section', 'subsection', 'subsubsection'] %>
+<% if v['doxtr_' ~ el ~ '_number_match_title_xheight'] %>
+  % --- << el | capitalize >>: scale number cap-height to title x-height ---
+  \settoheight{\doxtr@xhsc@xh}{{<% if v['doxtr_' ~ el ~ '_size'] %><< v['doxtr_' ~ el ~ '_size'] >><% endif %><% if v['doxtr_' ~ el ~ '_font'] %>\fontspec{<< v['doxtr_' ~ el ~ '_font'] >>}<% endif %>x}}%
+  \settoheight{\doxtr@xhsc@ch}{{\fontsize{10pt}{12pt}\selectfont<% if v['doxtr_' ~ el ~ '_number_font'] %>\fontspec{<< v['doxtr_' ~ el ~ '_number_font'] >>}<% endif %>0}}%
+  \directlua{
+    local xh = \number\doxtr@xhsc@xh
+    local ch = \number\doxtr@xhsc@ch
+    if ch > 0 then
+      local sz = xh / ch * 10
+      local bl = sz * 1.2
+      sz = math.floor(sz * 100 + 0.5) / 100
+      bl = math.floor(bl * 100 + 0.5) / 100
+      tex.sprint("\\setkomafont{<< el >>number}{\\color{dd<< el >>numbercolor}\\fontsize{" .. tostring(sz) .. "pt}{" .. tostring(bl) .. "pt}\\selectfont<% if v['doxtr_' ~ el ~ '_number_font'] %>\\fontspec{<< v['doxtr_' ~ el ~ '_number_font'] >>}<% endif %>}")
+    end
+  }
+<% endif %>
+<% endfor %>
+
+% --- Paragraph / Subparagraph: inherit x-height scaling from subsubsection ---
+<% if doxtr_subsubsection_number_match_title_xheight %>
+  \settoheight{\doxtr@xhsc@xh}{{\normalsize\sffamily\bfseries x}}%
+  \settoheight{\doxtr@xhsc@ch}{{\fontsize{10pt}{12pt}\selectfont<% if doxtr_subsubsection_number_font %>\fontspec{<< doxtr_subsubsection_number_font >>}<% endif %>0}}%
+  \directlua{
+    local xh = \number\doxtr@xhsc@xh
+    local ch = \number\doxtr@xhsc@ch
+    if ch > 0 then
+      local sz = xh / ch * 10
+      local bl = sz * 1.2
+      sz = math.floor(sz * 100 + 0.5) / 100
+      bl = math.floor(bl * 100 + 0.5) / 100
+      tex.sprint("\\setkomafont{paragraphnumber}{\\color{ddsubsubsectionnumbercolor}\\fontsize{" .. tostring(sz) .. "pt}{" .. tostring(bl) .. "pt}\\selectfont<% if doxtr_subsubsection_number_font %>\\fontspec{<< doxtr_subsubsection_number_font >>}<% endif %>}")
+      tex.sprint("\\setkomafont{subparagraphnumber}{\\color{ddsubsubsectionnumbercolor}\\fontsize{" .. tostring(sz) .. "pt}{" .. tostring(bl) .. "pt}\\selectfont<% if doxtr_subsubsection_number_font %>\\fontspec{<< doxtr_subsubsection_number_font >>}<% endif %>}")
+    end
+  }
+  \renewcommand*{\paragraphformat}{\usekomafont{paragraphnumber}\theparagraph\autodot}
+  \renewcommand*{\subparagraphformat}{\usekomafont{subparagraphnumber}\thesubparagraph\autodot}
+<% endif %>
+}% end \AtBeginDocument
+\makeatother
+<% endif %>
 
 %% Redefine Sphinx Rubric mapping to inject custom styling
 <% if doxtr_rubric_font or doxtr_rubric_color or doxtr_rubric_size %>
@@ -426,7 +483,7 @@
   \makebox[\textwidth][r]{%
     \parbox[b]{\dimexpr\textwidth-<< doxtr_chapter_margin_space >>\relax}{\raggedleft\usekomafont{chapter}#3}%
     \hspace{<< doxtr_chapter_margin_space >>}%
-    \makebox[0pt][l]{<% if doxtr_chapter_number_line %>\doxtr@drawline{ddchapterlinecolor}{<< doxtr_chapter_line_height >>}<% endif %>\hspace{\marginparsep}#2}%
+    \makebox[0pt][l]{<% if doxtr_chapter_number_line %>\doxtr@drawline{ddchapterlinecolor}{<< doxtr_chapter_line_height >>}<% endif %>\hspace{<< doxtr_chapter_number_sep >>}#2}%
   }%
 <% else %>
   \raggedleft\usekomafont{chapter}#2\enskip#3%
@@ -435,7 +492,7 @@
 \def\doxtr@chapter@align@left#1#2#3{%
 <% if doxtr_chapter_number_margin %>
   \makebox[\textwidth][l]{%
-    \makebox[0pt][r]{#2\hspace{\marginparsep}<% if doxtr_chapter_number_line %>\doxtr@drawline{ddchapterlinecolor}{<< doxtr_chapter_line_height >>}<% endif %>}%
+    \makebox[0pt][r]{#2\hspace{<< doxtr_chapter_number_sep >>}<% if doxtr_chapter_number_line %>\doxtr@drawline{ddchapterlinecolor}{<< doxtr_chapter_line_height >>}<% endif %>}%
     \hspace{<< doxtr_chapter_margin_space >>}%
     \parbox[b]{\dimexpr\textwidth-<< doxtr_chapter_margin_space >>\relax}{\raggedright\usekomafont{chapter}#3}%
   }%
@@ -457,7 +514,7 @@
 <% for el in ['section', 'subsection', 'subsubsection'] %>
 
   <% if v['doxtr_' ~ el ~ '_line_color'] %>
-    \definecolor{dd<< el >>linecolor}{cmyk}{<< v['doxtr_' ~ el ~ '_line_color'] >>}
+    \definecolor{dd<< el >>linecolor}{rgb}{<< v['doxtr_' ~ el ~ '_line_color'] >>}
   <% else %>
     \colorlet{dd<< el >>linecolor}{dd<< el >>numbercolor!45}
   <% endif %>
@@ -467,7 +524,7 @@
     \makebox[\textwidth][r]{%
       \parbox[b]{\dimexpr\textwidth-<< v['doxtr_' ~ el ~ '_margin_space'] >>\relax}{\raggedleft\usekomafont{#1}#4}%
       \hspace{<< v['doxtr_' ~ el ~ '_margin_space'] >>}%
-      \makebox[0pt][l]{<% if v['doxtr_' ~ el ~ '_number_line'] %>\doxtr@drawline{dd<< el >>linecolor}{<< v['doxtr_' ~ el ~ '_line_height'] >>}<% endif %>\hspace{\marginparsep}#3}%
+      \makebox[0pt][l]{<% if v['doxtr_' ~ el ~ '_number_line'] %>\doxtr@drawline{dd<< el >>linecolor}{<< v['doxtr_' ~ el ~ '_line_height'] >>}<% endif %>\hspace{<< v['doxtr_' ~ el ~ '_number_sep'] >>}#3}%
     }%
   <% else %>
     \raggedleft #3\enskip#4%
@@ -477,7 +534,7 @@
   \def\doxtr@<< el >>@align@left#1#2#3#4{%
   <% if v['doxtr_' ~ el ~ '_number_margin'] %>
     \makebox[\textwidth][l]{%
-      \makebox[0pt][r]{#3\hspace{\marginparsep}<% if v['doxtr_' ~ el ~ '_number_line'] %>\doxtr@drawline{dd<< el >>linecolor}{<< v['doxtr_' ~ el ~ '_line_height'] >>}<% endif %>}%
+      \makebox[0pt][r]{#3\hspace{<< v['doxtr_' ~ el ~ '_number_sep'] >>}<% if v['doxtr_' ~ el ~ '_number_line'] %>\doxtr@drawline{dd<< el >>linecolor}{<< v['doxtr_' ~ el ~ '_line_height'] >>}<% endif %>}%
       \hspace{<< v['doxtr_' ~ el ~ '_margin_space'] >>}%
       \parbox[b]{\dimexpr\textwidth-<< v['doxtr_' ~ el ~ '_margin_space'] >>\relax}{\raggedright\usekomafont{#1}#4}%
     }%
@@ -577,13 +634,13 @@
 
 %% 1. Register generated colors and fonts
 <% for t in admon_types %>
-  \definecolor{ddadmon@<< t >>@titlebg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_title_background_color_cmyk'] >>}
-  \definecolor{ddadmon@<< t >>@iconboxbg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_title_icon_box_background_color_cmyk'] >>}
-  \definecolor{ddadmon@<< t >>@contentbg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_content_background_color_cmyk'] >>}
-  \definecolor{ddadmon@<< t >>@contentbgnested}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_content_background_color_nested_cmyk'] >>}
-  \definecolor{ddadmon@<< t >>@titlefg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_title_font_color_cmyk'] >>}
-  \definecolor{ddadmon@<< t >>@contentfg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_content_font_color_cmyk'] >>}
-  \definecolor{ddadmon@<< t >>@iconfg}{cmyk}{<< v['doxtr_admonition_' ~ t ~ '_title_icon_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@titlebg}{rgb}{<< v['doxtr_admonition_' ~ t ~ '_title_background_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@iconboxbg}{rgb}{<< v['doxtr_admonition_' ~ t ~ '_title_icon_box_background_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@contentbg}{rgb}{<< v['doxtr_admonition_' ~ t ~ '_content_background_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@contentbgnested}{rgb}{<< v['doxtr_admonition_' ~ t ~ '_content_background_color_nested_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@titlefg}{rgb}{<< v['doxtr_admonition_' ~ t ~ '_title_font_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@contentfg}{rgb}{<< v['doxtr_admonition_' ~ t ~ '_content_font_color_cmyk'] >>}
+  \definecolor{ddadmon@<< t >>@iconfg}{rgb}{<< v['doxtr_admonition_' ~ t ~ '_title_icon_color_cmyk'] >>}
 
   \expandafter\def\csname ddadmon@<< t >>@titlefont\endcsname{<% if v['doxtr_admonition_' ~ t ~ '_title_font'] %>\fontspec{<< v['doxtr_admonition_' ~ t ~ '_title_font'] >>}<% endif %><< v['doxtr_admonition_' ~ t ~ '_title_font_size'] >>}
   \expandafter\def\csname ddadmon@<< t >>@contentfont\endcsname{<% if v['doxtr_admonition_' ~ t ~ '_content_font'] %>\fontspec{<< v['doxtr_admonition_' ~ t ~ '_content_font'] >>}<% endif %><< v['doxtr_admonition_' ~ t ~ '_content_font_size'] >>}
@@ -679,15 +736,15 @@
 
 %% 1. Register generated colors and fonts
 <% for t in need_types %>
-  \definecolor{ddneed@<< t >>@titlebg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_title_background_color_cmyk'] >>}
-  \definecolor{ddneed@<< t >>@titlefg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_title_color_cmyk'] >>}
-  \definecolor{ddneed@<< t >>@iconfg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_title_icon_color_cmyk'] >>}
-  \definecolor{ddneed@<< t >>@metabg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_metadata_background_color_cmyk'] >>}
-  \definecolor{ddneed@<< t >>@metafg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_metadata_font_color_cmyk'] >>}
-  \definecolor{ddneed@<< t >>@metakeyfg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_metadata_key_color_cmyk'] >>}
-  \definecolor{ddneed@<< t >>@contentbg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_content_background_color_cmyk'] >>}
-  \definecolor{ddneed@<< t >>@contentfg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_content_font_color_cmyk'] >>}
-  \definecolor{ddneed@<< t >>@seglinefg}{cmyk}{<< v['doxtr_need_' ~ t ~ '_segmentation_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@titlebg}{rgb}{<< v['doxtr_need_' ~ t ~ '_title_background_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@titlefg}{rgb}{<< v['doxtr_need_' ~ t ~ '_title_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@iconfg}{rgb}{<< v['doxtr_need_' ~ t ~ '_title_icon_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@metabg}{rgb}{<< v['doxtr_need_' ~ t ~ '_metadata_background_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@metafg}{rgb}{<< v['doxtr_need_' ~ t ~ '_metadata_font_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@metakeyfg}{rgb}{<< v['doxtr_need_' ~ t ~ '_metadata_key_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@contentbg}{rgb}{<< v['doxtr_need_' ~ t ~ '_content_background_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@contentfg}{rgb}{<< v['doxtr_need_' ~ t ~ '_content_font_color_cmyk'] >>}
+  \definecolor{ddneed@<< t >>@seglinefg}{rgb}{<< v['doxtr_need_' ~ t ~ '_segmentation_color_cmyk'] >>}
 
   \expandafter\def\csname ddneed@<< t >>@titlefont\endcsname{<% if v['doxtr_need_' ~ t ~ '_title_font'] %>\fontspec{<< v['doxtr_need_' ~ t ~ '_title_font'] >>}<% endif %><< v['doxtr_need_' ~ t ~ '_title_font_size'] >>}
   \expandafter\def\csname ddneed@<< t >>@metafont\endcsname{<% if v['doxtr_need_' ~ t ~ '_metadata_font'] %>\fontspec{<< v['doxtr_need_' ~ t ~ '_metadata_font'] >>}<% endif %><< v['doxtr_need_' ~ t ~ '_metadata_font_size'] >>}

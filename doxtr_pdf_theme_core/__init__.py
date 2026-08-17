@@ -8,7 +8,7 @@ import os
 import re
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional, Dict, List, Any
+from typing import Optional, List
 from sphinx.util import logging
 from jinja2 import Environment
 from sphinx.writers.latex import LaTeXTranslator
@@ -19,30 +19,43 @@ from sphinx.errors import ExtensionError
 # --- Import from refactored modules ---
 from .utils import (
     get_safe_filename, get_highest_contrast_color,
-    hex_to_cmyk_string, deep_update,
-    resolve_all_colors, to_bool,
+    deep_update, resolve_all_colors, to_bool,
+    _split_hex_opacity, hex_to_rgb_floats, hex_dark_invert,
+    _get_luminance, adapt_color_to_page, _adapt_colors_in_dict,
+    _compute_adaptation_compression, _RE_SAFE_NAME,
+    register_color_operation, _custom_color_operations,
 )
 from .shell_icons import make_shell_icon, micro_shell_icon, genos_shell_icon
-from .core_fallbacks import (
-    DEFAULT_TITLE_STYLES, DEFAULT_ADMONITION_STYLE, DEFAULT_NEED_STYLE,
-    DEFAULT_CONTAINER_STYLE, DEFAULT_TABLE_STYLE, DEFAULT_FIGURE_STYLE,
-    DEFAULT_CODE_STYLE, DEFAULT_SIDEBAR_STYLE, DEFAULT_HIGHLIGHTS_STYLE
-)
-from .core_config import CORE_CONFIG_MANIFEST, DOXTR_GLOBALS, DOXTR_SEMANTIC_PALETTE, RenderMode, VALID_RENDER_MODES, validate_render_mode
-
-# Import from new refactored modules (Plan 03)
-from .latex_escape import esc_latex, LATEX_ESCAPE_MAP
-from .colors import safe_cmyk, prepare_cmyk_colors, CONTAINER_COLOR_KEYS, TABLE_COLOR_KEYS
+from .core_config import CORE_CONFIG_MANIFEST, DOXTR_GLOBALS, DOXTR_SEMANTIC_PALETTE, DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS, RenderMode, validate_render_mode
+from .colors import safe_cmyk
 from .templates import (
-    LATEX_STYLES_DIR, DEFAULT_STYLE_NAME, CLASSIC_STYLE_NAME, GENERIC_TYPE_NAME,
-    STYLE_TYPES, STYLE_FALLBACKS,
-    clear_template_cache, get_template, resolve_template,
-    render_template, resolve_and_render_template,
+    DEFAULT_STYLE_NAME,
+    clear_template_cache, resolve_and_render_template,
 )
 from .config import (
-    VALID_KEYS, CORE_ADMONITION_TYPES, validate_config_keys,
+    CORE_ADMONITION_TYPES, validate_config_keys,
     validate_container_mapping, make_resolve_val_fn, make_merge_section_fn,
+    make_collect_dark_fn, warn_deprecated,
 )
+from .fonts import (
+    register_font_family,
+    register_font_families,
+    get_registered_fonts,
+    register_font_renderer,
+    register_font_discoverer,
+    inject_font_features,
+    _clear_font_registry,
+    _set_fonts_processed,
+    _api_font_registrations,
+    _registered_fonts,
+    process_user_font_config,
+    auto_discover_fonts,
+    collect_font_files,
+    validate_font_files,
+    _deduplicate_registry,
+)
+import doxtr_pdf_theme_core.fonts as _fonts_mod
+
 from .ast_processors import (
     process_containers_ast,
     process_tables_ast,
@@ -51,12 +64,29 @@ from .ast_processors import (
     process_sidebar_ast,
     process_highlights_ast,
     process_needs_ast,
-    render_nodes_to_latex,
+    process_topics_ast,
 )
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.0.5"
+__version__ = "1.1.0"
+
+# Legacy flat-key compat list (remove in v1.1.0)
+_LEGACY_GLOBAL_KEYS = [
+    'show_release', 'headsep', 'footskip', 'headheight', 'footheight',
+    'show_list_of_figures', 'show_list_of_tables', 'show_list_of_listings',
+    'appendix_chapter_numbering', 'footer_logo', 'footer_logo_height',
+    'main_font', 'main_font_options', 'main_font_size',
+    'sans_font', 'sans_font_options',
+    'mono_font', 'mono_font_options',
+    'inherit_all', 'inherit_font', 'inherit_color', 'inherit_size',
+    'wcag_level', 'wcag_color_debug',
+    'container_title_style_path', 'container_style_path',
+    'table_style_path', 'figure_style_path', 'code_style_path',
+    'admonition_style_path', 'need_style_path',
+    'title_page_template_path', 'sidebar_style_path',
+    'landscape_package',
+]
 
 __all__ = [
     'setup',
@@ -68,63 +98,482 @@ __all__ = [
     'genos_shell_icon',
     # Extensibility API
     'register_ast_processor',
+    'register_style_type',
+    'register_preamble_hook',
+    'register_config_transform',
+    'register_color_operation',
+    # Font registration API
+    'register_font_family',
+    'register_font_families',
+    'get_registered_fonts',
+    'register_font_renderer',
+    'register_font_discoverer',
+    'inject_font_features',
+    'hex_dark_invert',
+    'adapt_color_to_page',
+    # Dark mode strategy constants (for testing and child theme introspection)
+    '_DARK_STRATEGY_LUMINANCE_THRESHOLD',
+    '_ADAPTATION_LUMINANCE_THRESHOLD',
+    '_VALID_DARK_STRATEGIES',
 ]
 
 # --- EXTENSIBLE AST PROCESSOR REGISTRY (Task 2.1) ---
 # Third-party extensions may register custom doctree-resolved handlers here.
-# Each entry is a callable: fn(app, doctree, docname) -> None
-# They are invoked in registration order at priority 993 (after all core processors).
+# Each entry is a tuple: (fn, doctype, priority)
+#   fn       – callable with signature fn(app, doctree, docname) -> None
+#   doctype  – builder format to filter on (e.g. 'latex'), or None to default to latex-only
+#   priority – Sphinx event priority passed directly to app.connect()
 _custom_ast_processors: list = []
 
+# Set to True once _connect_deferred_custom_processors has run (i.e. after builder-inited).
+# Used to emit a warning when register_ast_processor() is called too late.
+_custom_processors_connected: bool = False
 
-def register_ast_processor(fn) -> None:
+# --- EXTENSIBLE STYLE TYPE REGISTRY ---
+# Theme authors may register new element style types via register_style_type().
+# Each entry is a dict produced by register_style_type() and processed in
+# registration order during config_inited() (after all built-in style types).
+_custom_style_types: list = []
+
+# Built-in preamble_var keys already claimed by the core processing pipeline.
+# register_style_type() rejects any name whose resolved preamble_var collides
+# with one of these to prevent silent overwrite of built-in rendered LaTeX.
+_BUILTIN_PREAMBLE_VARS: frozenset = frozenset({
+    'doxtr_rendered_code',
+    'doxtr_rendered_sidebar',
+    'doxtr_rendered_highlights',
+    'doxtr_rendered_topic',
+    'doxtr_rendered_contents',
+    'doxtr_rendered_containers',
+    'doxtr_rendered_title_page',
+    'doxtr_rendered_tables',
+    'doxtr_rendered_figures',
+    'doxtr_rendered_draft',
+})
+
+# --- EXTENSIBLE PREAMBLE HOOK REGISTRY (Phase 2.8) ---
+# Theme authors may inject LaTeX into the document preamble without copying
+# the entire preamble.tex_t template.  Each entry is a tuple: (fn, position).
+_VALID_PREAMBLE_POSITIONS = frozenset({
+    'before_packages', 'after_packages', 'before_styles', 'after_styles',
+})
+_preamble_hooks: list = []
+
+
+def register_preamble_hook(fn, position='after_styles'):
+    """Register a hook to inject LaTeX into the document preamble.
+
+    This allows child themes to inject \\usepackage, \\newcommand, or other
+    LaTeX without copying the entire preamble.tex_t template.
+
+    Args:
+        fn: A callable that returns a LaTeX string to inject.
+            Signature: fn() -> str
+        position: Where to inject the result. One of:
+            - 'before_packages': Before \\usepackage declarations
+            - 'after_packages': After core packages, before style definitions
+            - 'before_styles': Before rendered style blocks (containers, code, etc.)
+            - 'after_styles': After all rendered style blocks (default)
+
+    Raises:
+        ValueError: If *position* is not one of the valid positions.
+        TypeError: If *fn* is not callable.
+
+    Example::
+
+        from doxtr_pdf_theme_core import register_preamble_hook
+
+        def my_packages():
+            return r'\\usepackage{tikz-cd}'
+
+        register_preamble_hook(my_packages, position='after_packages')
+    """
+    if not callable(fn):
+        raise TypeError(f"register_preamble_hook: fn must be callable, got {type(fn).__name__}")
+    if position not in _VALID_PREAMBLE_POSITIONS:
+        raise ValueError(
+            f"register_preamble_hook: invalid position '{position}'. "
+            f"Must be one of: {sorted(_VALID_PREAMBLE_POSITIONS)}"
+        )
+    _preamble_hooks.append((fn, position))
+
+
+# --- EXTENSIBLE CONFIG TRANSFORM HOOK REGISTRY (Phase 4.4) ---
+# Theme authors may register post-merge config transforms that run after all
+# three-tier merging is complete but before template rendering.  Each entry is
+# a callable with signature fn(sections: dict, palette: dict, config) -> None.
+_config_transform_hooks: list = []
+
+
+def register_config_transform(fn) -> None:
+    """Register a post-merge config transform for child themes.
+
+    The registered function is called after all three-tier merging is complete
+    but before template rendering. This allows child themes to intercept and
+    modify the merged config sections programmatically.
+
+    Args:
+        fn: A callable with signature fn(sections: dict, palette: dict, config) -> None.
+            ``sections`` is the dict of all merged config sections (mutate in-place).
+            ``palette`` is the resolved semantic palette (mutate in-place).
+            ``config`` is the Sphinx config object.
+
+    Raises:
+        TypeError: If *fn* is not callable.
+
+    Example::
+
+        from doxtr_pdf_theme_core import register_config_transform
+
+        def my_transform(sections, palette, config):
+            # Force all containers to use a specific font
+            for name, conf in sections['containers'].items():
+                conf['title_font'] = 'My Custom Font'
+
+        register_config_transform(my_transform)
+    """
+    if not callable(fn):
+        raise TypeError(
+            f"register_config_transform: fn must be callable, got {type(fn).__name__}"
+        )
+    _config_transform_hooks.append(fn)
+
+
+def register_ast_processor(fn, doctype=None, priority=992) -> None:
     """Register a custom doctree-resolved AST processor.
 
     This function allows theme authors and downstream extensions to hook into
-    the AST processing pipeline without monkey-patching. Registered processors
-    are called in registration order at priority 993, after all core processors
-    but before the document is written.
+    the AST processing pipeline without monkey-patching. Each registered
+    processor is connected to the 'doctree-resolved' event at its own Sphinx
+    priority, enabling precise ordering relative to core processors and other
+    downstream processors.
+
+    Core processor priorities for reference:
+        999 – process_needs_ast
+        998 – process_containers_ast
+        997 – process_epigraph_ast
+        996 – process_tables_ast
+        995 – process_codeblocks_ast
+        994 – process_sidebar_ast
+        993 – process_highlights_ast
+        992 – default for register_ast_processor (between core processors and dark/topic processing)
+        991 – process_dark_images_ast
+        990 – process_topics_ast
 
     Args:
-        fn: A callable with signature fn(app, doctree, docname).
-            Called for every resolved doctree, latex builder only.
+        fn:       A callable with signature fn(app, doctree, docname) -> None.
+        doctype:  Builder format to restrict execution to (e.g. 'latex', 'html').
+                  None (default) preserves the existing behaviour: latex-only.
+        priority: Sphinx event priority passed to app.connect(). Lower numbers
+                  run first. Default is 992 (after all core processors).
+                  Use a value between 993–999 to interleave with core processors.
 
-    Example:
-        >>> from doxtr_pdf_theme_core import register_ast_processor
-        >>> def my_processor(app, doctree, docname):
-        ...     for node in doctree.traverse(nodes.paragraph):
-        ...         # Custom processing
-        ...         pass
-        >>> register_ast_processor(my_processor)
+    Note:
+        ``register_ast_processor()`` must be called from an extension's
+        ``setup()`` function. Calls made after Sphinx has fired
+        ``builder-inited`` will be logged as a warning and ignored because
+        the deferred connector has already run.
+
+    Note:
+        ``register_ast_processor(fn)`` and
+        ``register_ast_processor(fn, None, 992)`` are exactly equivalent —
+        both append the tuple ``(fn, None, 992)`` and resolve to latex-only
+        at priority 992.
+
+    Example — run after all core processors (default behaviour, unchanged)::
+
+        >>> register_ast_processor(my_fn)
+
+    Example — run before process_highlights_ast (priority 993) but after
+    process_codeblocks_ast (priority 995)::
+
+        >>> register_ast_processor(my_fn, priority=994)
+
+    Example — run for HTML builds only::
+
+        >>> register_ast_processor(my_fn, doctype='html', priority=500)
     """
-    _custom_ast_processors.append(fn)
-
-
-def _dispatch_custom_ast_processors(app, doctree, docname):
-    """Invoke all registered custom AST processors.
-
-    This function is connected to the 'doctree-resolved' event at priority 993,
-    after all core processors have run.
-    """
-    if getattr(app.builder, 'format', '') != 'latex':
+    if _custom_processors_connected:
+        logger.warning(
+            f"[Doxtr Core] register_ast_processor('{getattr(fn, '__name__', repr(fn))}') "
+            "was called after 'builder-inited' has fired and will be ignored. "
+            "Move the call into your extension's setup() function."
+        )
         return
-    for fn in _custom_ast_processors:
-        try:
-            fn(app, doctree, docname)
-        except Exception as e:
+    _custom_ast_processors.append((fn, doctype, priority))
+
+
+def register_style_type(
+    name: str,
+    subdir: str,
+    fallback_fn,
+    config_section_factory=None,
+    color_keys: Optional[List[str]] = None,
+    preamble_var: Optional[str] = None,
+    wcag_pairs: Optional[List[tuple]] = None,
+) -> None:
+    """Register a custom style type for template resolution.
+
+    Allows theme authors to introduce new element types (beyond the built-in
+    admonition/container/table/etc. set) without patching core files.  A
+    registered type participates in the full config_inited() pipeline:
+    three-tier config merge, color resolution, CMYK conversion, template
+    resolution, and preamble injection.
+
+    Args:
+        name: Style type name used as the STYLE_TYPES key and config section
+              name (e.g. ``'callout'``).  Must consist only of ASCII letters,
+              digits, and underscores.  Hyphens are not allowed because they
+              produce a ``doxtr_my-type`` Sphinx config key that cannot be
+              written in ``conf.py`` (Python parses it as subtraction).
+        subdir: Subdirectory name under ``latex_styles/`` that holds ``.tex_t``
+                files (e.g. ``'callout'``).  May differ from ``name``.
+        fallback_fn: Callable ``(style_name: str) -> str`` that returns an
+                     absolute LaTeX fallback string when no ``.tex_t`` file is
+                     found.  A plain string is also accepted and used as a
+                     constant fallback regardless of ``style_name``.
+        config_section_factory: Optional ``callable() -> dict``.  Returns the
+                                core-default config dict merged before theme and
+                                user layers.  If ``None``, an empty dict is used.
+        color_keys: Optional list of field names whose values are converted to
+                    CMYK after merging (e.g. ``['border_color',
+                    'content_background_color']``).  Each key ``k`` produces a
+                    ``k + '_cmyk'`` field on the resolved config dict.
+        preamble_var: Key under which the rendered LaTeX string is stored in
+                      ``template_vars`` and later injected into the preamble.
+                      Defaults to ``f'doxtr_rendered_{name}'``.
+        wcag_pairs: Optional list of (foreground_key, background_key) tuples for
+                    automatic WCAG contrast enforcement. Each pair specifies a
+                    foreground color key that should be adjusted for readability
+                    against the background color key. Example:
+                    ``[('title_font_color', 'title_background_color'),
+                    ('title_icon_color', 'title_background_color')]``
+
+    Raises:
+        ValueError: If ``name`` contains characters other than ASCII letters,
+                    digits, or underscores, or if the resolved ``preamble_var``
+                    collides with a built-in rendered key.
+
+    Note:
+        Call ``register_style_type()`` at **module level** (outside any
+        ``setup()`` function) so that the core ``setup()`` loop can call
+        ``app.add_config_value(f'doxtr_{name}', {}, 'env')`` automatically.
+        If you must call it inside a theme ``setup()`` — which runs after
+        the core ``setup()`` has already fired — you must also manually call
+        ``app.add_config_value(f'doxtr_{name}', {}, 'env')`` yourself;
+        otherwise Sphinx will emit an *unknown configuration value* warning
+        if users set ``doxtr_{name}`` in ``conf.py``.
+
+    Example::
+
+        from doxtr_pdf_theme_core import register_style_type
+
+        register_style_type(
+            name='callout',
+            subdir='callout',
+            fallback_fn=lambda _: r'\\newenvironment{ddcallout}{}{}',
+            config_section_factory=lambda: {
+                'style': 'default',
+                'border_color': '#FF0000',
+                'content_background_color': '#FFFFFF',
+                'title_font_color': '#FFFFFF',
+                'title_background_color': '#FF0000',
+            },
+            color_keys=['border_color', 'content_background_color',
+                        'title_font_color', 'title_background_color'],
+            wcag_pairs=[('title_font_color', 'title_background_color')],
+        )
+    """
+    if not name.replace('_', '').isalnum():
+        raise ValueError(
+            f"[Doxtr Core] register_style_type: name '{name}' must contain only "
+            f"ASCII letters, digits, or underscores (hyphens are not allowed "
+            f"because they produce a conf.py-inaccessible config key)."
+        )
+    # Guard against collision with built-in preamble_var keys to prevent silent
+    # overwrite of already-rendered built-in LaTeX in template_vars.
+    _pv = preamble_var or f'doxtr_rendered_{name}'
+    if _pv in _BUILTIN_PREAMBLE_VARS:
+        raise ValueError(
+            f"[Doxtr Core] register_style_type: preamble_var '{_pv}' conflicts "
+            f"with a built-in rendered key. Choose a different name or supply "
+            f"an explicit preamble_var that does not match: "
+            f"{sorted(_BUILTIN_PREAMBLE_VARS)}"
+        )
+    # Normalise string fallbacks to callables
+    if isinstance(fallback_fn, str):
+        _fallback_str = fallback_fn
+        fallback_fn = lambda _: _fallback_str  # noqa: E731
+    # Warn and replace on duplicate registration
+    for _existing in list(_custom_style_types):
+        if _existing['name'] == name:
             logger.warning(
-                f"[Doxtr Core] Custom AST processor '{fn.__name__}' raised: {e}"
+                f"[Doxtr Core] register_style_type: '{name}' is already registered. "
+                f"Overwriting the previous registration."
             )
+            _custom_style_types.remove(_existing)
+            break
+    _custom_style_types.append({
+        'name': name,
+        'subdir': subdir,
+        'fallback_fn': fallback_fn,
+        'config_section_factory': config_section_factory,
+        'color_keys': color_keys or [],
+        'preamble_var': _pv,
+        'wcag_pairs': wcag_pairs or [],
+    })
+
+
+def _connect_deferred_custom_processors(app):
+    """Connect all registered custom AST processors to 'doctree-resolved'.
+
+    Called on 'builder-inited', after every extension's setup() has run and
+    all register_ast_processor() calls have been recorded. Each processor is
+    connected at its own Sphinx priority so ordering is fully controllable.
+    """
+    global _custom_processors_connected
+    _custom_processors_connected = True
+    def _make_wrapper(fn, effective_doctype):
+        def _wrapper(app, doctree, docname):
+            if getattr(app.builder, 'format', '') != effective_doctype:
+                return
+            try:
+                fn(app, doctree, docname)
+            except Exception as e:
+                logger.warning(
+                    f"[Doxtr Core] Custom AST processor "
+                    f"'{getattr(fn, '__name__', repr(fn))}' raised: {e}"
+                )
+        _wrapper.__name__ = getattr(fn, '__name__', 'custom_ast_processor')
+        return _wrapper
+
+    for fn, doctype, priority in _custom_ast_processors:
+        effective_doctype = doctype if doctype is not None else 'latex'
+        app.connect('doctree-resolved', _make_wrapper(fn, effective_doctype), priority=priority)
+
+# --- Dark Mode Strategy Constants ---
+# Luminance threshold for auto-detecting dark mode strategy.
+# Pages with luminance below this value use 'invert' (color inversion).
+# Pages at or above this value use 'passthrough' (no inversion).
+# Covers all practical dark backgrounds while correctly identifying light themes.
+_DARK_STRATEGY_LUMINANCE_THRESHOLD = 0.35
+
+# Valid values for doxtr_dark_mode_strategy config.
+_VALID_DARK_STRATEGIES = ('auto', 'invert', 'passthrough')
+
+# Minimum number of palette keys (excluding 'page') that should be overridden
+# in passthrough mode for meaningful visual differentiation from light mode.
+_PASSTHROUGH_MIN_PALETTE_KEYS = 4
+
+# Luminance difference threshold for auto-enabling page adaptation.
+# Below this threshold, the page shift is imperceptible (ΔL* < 2 at high
+# luminance ≈ just noticeable difference). Using 0.05 in Y-space
+# correctly catches cream (#FCF6E5, ΔY=0.077) and off-white (#F2F0EF,
+# ΔY=0.126) while skipping trivial shifts (#FCFCFC, ΔY=0.027).
+_ADAPTATION_LUMINANCE_THRESHOLD = 0.05
+
+# Luminance range defining "mid-grey" pages where dynamic range is limited.
+# Pages in this range trigger a warning about potential color compression.
+_ADAPTATION_MID_GREY_LOW = 0.25
+_ADAPTATION_MID_GREY_HIGH = 0.55
+
+# Luminance difference threshold for the proactive "adaptation available" hint.
+# Must be larger than _ADAPTATION_LUMINANCE_THRESHOLD to avoid hinting when
+# the difference is already caught by auto-mode.
+_ADAPTATION_HINT_THRESHOLD = 0.10
 
 # --- Precompiled regex patterns ---
 # Compiled once at import time for performance (Task 4.5)
-_RE_SAFE_NAME = re.compile(r'[^a-zA-Z]')
+# _RE_SAFE_NAME is imported from utils.py (shared with ast_processors/containers.py)
 _RE_HASH_NUM = re.compile(r'#+1')
+
+
+def _dark_invert_colors_in_dict(d: dict) -> dict:
+    """Return a copy of d with all hex colour values dark-inverted.
+
+    Applies hex_dark_invert (invert(0.86) hue-rotate(180deg)) to every
+    string value starting with '#'. dd: expressions pass through unchanged
+    and are resolved later by resolve_all_colors against the dark palette.
+    Non-colour values (fonts, sizes, booleans) are copied unchanged.
+    Nested dicts are recursed into.
+    """
+    result = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            result[k] = _dark_invert_colors_in_dict(v)
+        elif isinstance(v, str) and v.startswith('#'):
+            result[k] = hex_dark_invert(v) or v
+        else:
+            result[k] = v
+    return result
+
+
+def _auto_detect_dark_strategy(page_color: str) -> tuple:
+    """Auto-detect dark mode strategy from page luminance.
+
+    Returns (strategy, luminance) tuple where strategy is 'invert' or 'passthrough'.
+    Uses _DARK_STRATEGY_LUMINANCE_THRESHOLD to determine the cutoff.
+    """
+    lum = _get_luminance(page_color)
+    strategy = 'invert' if lum < _DARK_STRATEGY_LUMINANCE_THRESHOLD else 'passthrough'
+    return strategy, lum
+
+
+def _build_dark_section(light_merged: dict, dark_overrides_section: dict,
+                        strategy: str = 'invert') -> dict:
+    """Build the dark-mode merged config for one section.
+
+    When strategy='invert': invert all hex colors, then merge overrides.
+    When strategy='passthrough': skip inversion, only merge overrides on
+    top of the light values. dd: expressions resolve against the dark
+    palette regardless of strategy.
+    """
+    if strategy == 'passthrough':
+        # No inversion — light values are appropriate for a light dark-mode page.
+        # Only apply user/theme dark_overrides for accent differentiation.
+        return deep_update(copy.deepcopy(light_merged),
+                           copy.deepcopy(dark_overrides_section))
+    # Default: invert all hex colors, then merge overrides
+    core_dark = _dark_invert_colors_in_dict(light_merged)
+    return deep_update(copy.deepcopy(core_dark),
+                       copy.deepcopy(dark_overrides_section))
 
 
 
 
 class StyleBoxDirective(Directive):
+    """RST directive for custom styled container boxes.
+
+    Provides the ``.. stylebox:: <container_name>`` directive that wraps
+    content in a named container node.  The container name maps to an entry
+    in ``doxtr_containers`` (or via ``doxtr_container_mapping``) and is
+    rendered as a styled tcolorbox in LaTeX output.
+
+    Usage::
+
+        .. stylebox:: my_container
+           :title: Optional Title
+           :class: extra-css-class
+
+           Content goes here.
+
+    Options:
+        :title:   Override or supply the box title text.  If omitted, the
+                  title defined in the container's config entry is used.
+        :notitle: Suppress the title entirely, even if one is defined in
+                  configuration.
+        :class:   Additional CSS/LaTeX classes appended to the container
+                  node (useful for per-instance overrides in RST).
+        :name:    A reStructuredText reference name for cross-referencing.
+
+    Integration:
+        During the ``doctree-resolved`` phase, ``process_containers_ast``
+        matches container nodes whose classes include a registered container
+        name and wraps them in raw LaTeX ``\\begin{doxtrstyleboxrouter}``
+        environments. The container's style and title_style ``.tex_t``
+        templates control the final appearance.
+    """
+
     required_arguments = 1
     optional_arguments = 0
     final_argument_whitespace = True
@@ -157,10 +606,66 @@ class StyleBoxDirective(Directive):
 # The functions process_containers_ast, process_tables_ast, process_codeblocks_ast,
 # process_epigraph_ast, process_sidebar_ast, process_needs_ast are all imported above.
 
+
+def _resolve_sty_file(filename: str, override_paths: list, pkg_dir: Path) -> str:
+    """Resolve a .sty file through override paths then the core fallback.
+
+    Search order:
+      1. Each directory in override_paths (in order) — supports absolute paths
+         and paths already resolved to confdir by the caller.
+      2. Core package fallback: pkg_dir / 'latex_styles' / filename
+
+    Args:
+        filename:       Bare filename, e.g. 'sphinxlatexstyleheadings.sty'
+        override_paths: List of directory paths to search first.
+        pkg_dir:        Resolved Path of this package (doxtr_pdf_theme_core/).
+
+    Returns:
+        Absolute path string of the first matching file found, or the core
+        fallback path if none of the override paths contain the file.
+    """
+    for dir_str in override_paths:
+        candidate = Path(dir_str) / filename
+        if candidate.exists():
+            return str(candidate.resolve())
+    # Core fallback — always present in the installed package
+    return str(pkg_dir / "latex_styles" / filename)
+
+
 def config_inited(app, config):
+    """Process all configuration, resolve templates, and inject LaTeX preamble.
+
+    This is the main orchestration function that executes the configuration
+    pipeline in three stages:
+
+    1. **Merge & Resolve** (_stage_merge_and_resolve): Three-tier merge of all
+       config sections, dark mode activation, page color adaptation, and dd:
+       expression resolution (Pass 1).
+    2. **Build & Render Preamble** (_stage_build_and_render_preamble): Build
+       template variables from merged config, resolve and render all .tex_t
+       style templates, and produce the final preamble LaTeX string.
+    3. **Assemble Output** (_stage_assemble_output): Font processing, LaTeX
+       element assembly, hyperlink colors, and final preamble injection into
+       config.latex_elements.
+
+    Called at priority 900 on the 'config-inited' event.
+
+    Args:
+        app: The Sphinx application object.
+        config: The Sphinx config object. Mutated extensively — final state
+                includes latex_elements, latex_additional_files, and all
+                resolved doxtr_* attributes.
+    """
+    # Clear template cache and preamble hooks at the start of each build to avoid
     # Clear template cache at the start of each build to avoid stale templates
     # when using sphinx-autobuild or similar tools.
     clear_template_cache()
+    # NOTE: _preamble_hooks, _config_transform_hooks, and _custom_color_operations
+    # are NOT cleared here. They are module-level singletons registered during setup()
+    # or at import time — before config_inited fires. Clearing them would make the
+    # APIs non-functional. Sphinx only calls setup() once per process, so duplicates
+    # cannot accumulate. (Compare: _custom_ast_processors and _custom_style_types
+    # are also never cleared.)
 
     if config.latex_engine not in ('lualatex',):
         config.latex_engine = 'lualatex'
@@ -171,35 +676,137 @@ def config_inited(app, config):
     if not config.latex_documents or 'outpdfname.tex' in config.latex_documents[0][1]:
         config.latex_documents = [(config.root_doc, f"{safe_project}.tex", config.project, config.author, 'manual')]
 
+    # --- PIPELINE STAGE 1: Merge & Resolve ---
+    ctx = _stage_merge_and_resolve(app, config)
+
+    # --- PIPELINE STAGE 2: Build & Render Preamble ---
+    _stage_build_and_render_preamble(app, config, ctx)
+
+    # --- PIPELINE STAGE 3: Assemble Output ---
+    _stage_assemble_output(app, config, ctx)
+
+
+def _stage_merge_and_resolve(app, config):
+    """Pipeline Stage 1: Three-tier merge, dark mode, page adaptation, color resolution.
+
+    Performs the following in order:
+    - Three-tier globals merge + legacy flat-key migration
+    - Dark mode flag normalization
+    - Base font size & size_factor calculation
+    - Section merging for all config sections (via merge_section)
+    - Configuration validation (unknown keys, container mapping)
+    - Dark overrides collection
+    - Semantic palette merge (three-tier)
+    - Dark mode strategy detection & palette generation
+    - Dark mode activation (rebuilding all sections for dark mode)
+    - Page color adaptation (luminance-proportional remapping)
+    - dd: expression resolution (Pass 1)
+
+    Args:
+        app: The Sphinx application object.
+        config: The Sphinx config object. Mutated: sets config.doxtr_dark_mode,
+                config.doxtr_dark_mode_strategy_resolved, config.doxtr_dark_text_color,
+                config.doxtr_dark_overrides, config.doxtr_adaptation_state,
+                config.doxtr_containers.
+
+    Returns:
+        dict: A context dict containing all pipeline state needed by subsequent
+              stages. Keys include 'g', 'theme_defaults', 'theme_style_paths',
+              'resolve_val', 'dark_mode', 'wcag_level', 'wcag_color_debug',
+              'main_font_size_str', 'main_font_size_pt', 'semantic_palette',
+              'page_bg', 'adapt_to_page', 'designed_page', 'compress_dark',
+              'compress_light', 'merged_configs', 'pkg_dir', and all individual
+              section dicts (tp, headings, parts, containers, etc.).
+    """
     # --- THREE-TIER MERGE ARCHITECTURE ---
     theme_defaults = getattr(config, 'doxtr_theme_defaults', {})
     theme_style_paths = getattr(config, 'doxtr_theme_style_paths', [])
 
-    def resolve_val(conf_attr, theme_key, fallback=None, section=None):
-        val = getattr(config, conf_attr, None)
-        if val is not None: return val
-        if theme_key in theme_defaults: return theme_defaults[theme_key]
-        if section:
-            section_conf = CORE_CONFIG_MANIFEST.get(section, {})
-            if isinstance(section_conf, dict):
-                val = section_conf.get(theme_key, fallback)
-            else:
-                val = section_conf if section_conf is not None else fallback
-            if val is not None: return val
-        return DOXTR_GLOBALS.get(theme_key, fallback)
+    resolve_val = make_resolve_val_fn(config, theme_defaults)
+    merge_section = make_merge_section_fn(config, theme_defaults)
+    collect_dark = make_collect_dark_fn(config, theme_defaults)
 
-    def merge_section(name, config_attr=None):
-        """Three-tier merge: core → theme → user for a config section."""
-        attr = config_attr or f'doxtr_{name}'
-        section_core = CORE_CONFIG_MANIFEST.get(name, {})
-        section_theme = theme_defaults.get(name, {})
-        section_user = getattr(config, attr, {})
-        return deep_update(deep_update(copy.deepcopy(section_core), section_theme), section_user)
+    # --- GLOBALS MERGE (must run before palette/color resolution) ---
+    _globals_core = DOXTR_GLOBALS.get('light', {})
+    _globals_theme = theme_defaults.get('globals', {}).get('light', {}) if isinstance(theme_defaults.get('globals'), dict) else {}
+    _globals_user = getattr(config, 'doxtr_globals', {}).get('light', {}) if isinstance(getattr(config, 'doxtr_globals', {}), dict) else {}
+    g = deep_update(
+        deep_update(copy.deepcopy(_globals_core), copy.deepcopy(_globals_theme)),
+        copy.deepcopy(_globals_user),
+    )
+
+    # Legacy flat-key migration — inject any old doxtr_<key> = value into g.
+    _any_legacy = False
+    for _key in _LEGACY_GLOBAL_KEYS:
+        _val = getattr(config, f'doxtr_{_key}', None)
+        if _val is not None:
+            _any_legacy = True
+            g[_key] = _val
+    if _any_legacy:
+        logger.warning(
+            "[Doxtr Core] One or more legacy flat globals (doxtr_main_font, "
+            "doxtr_headsep, etc.) are set. These are deprecated in favour of "
+            "doxtr_globals = {'light': {...}}. Support will be removed in v1.1.0."
+        )
+
+    # Validate top-level wrapper keys
+    _raw_globals = getattr(config, 'doxtr_globals', {})
+    if isinstance(_raw_globals, dict):
+        _unknown_globals_keys = set(_raw_globals.keys()) - {'light', 'dark'}
+        if _unknown_globals_keys:
+            logger.warning(
+                f"[Doxtr Core] Unknown top-level keys in 'doxtr_globals': "
+                f"{sorted(_unknown_globals_keys)}. Valid keys are 'light' and 'dark'."
+            )
+
+    # --- DARK MODE FLAG ---
+    dark_mode = to_bool(getattr(config, 'doxtr_dark_mode', False), default=False)
+    config.doxtr_dark_mode = dark_mode  # normalise to bool
+
+    # Convenience reads from globals
+    wcag_level = g.get('wcag_level', 7)
+    wcag_color_debug = g.get('wcag_color_debug', False)
 
     # Merge core configs via manifest
     tp = merge_section('title_page')
     headings = merge_section('headings')
     parts = merge_section('parts')
+
+    # --- Base Font Size & Size Factor Calculation Engine ---
+    # Resolve the base document font size through three-tier merge
+    main_font_size_str = g.get('main_font_size', '11.5pt')
+    # Parse the numeric pt value (e.g. '11.5pt' → 11.5)
+    _mfs_match = re.match(r'(\d+(?:\.\d+)?)', str(main_font_size_str))
+    try:
+        main_font_size_pt = float(_mfs_match.group(1)) if _mfs_match else 11.5
+    except (ValueError, TypeError):
+        logger.warning("[Doxtr Core] Invalid main_font_size '%s'; falling back to 11.5pt.", main_font_size_str)
+        main_font_size_pt = 11.5
+
+    # Compute heading sizes from size_factor where applicable.
+    # size_factor is a multiplier of main_font_size: e.g. size_factor=2.0 with 11.5pt → \fontsize{23.0pt}{27.6pt}\selectfont
+    # If user explicitly sets 'size' on a heading level, it takes precedence over size_factor.
+    # Note: 'part' is intentionally excluded — part sizes come from the separate doxtr_parts config,
+    # not from headings['part']. size_factor on headings['part'] would be computed but never consumed.
+    _heading_levels = ['chapter', 'section', 'subsection', 'subsubsection']
+    for _hlevel in _heading_levels:
+        if _hlevel in headings and isinstance(headings[_hlevel], dict):
+            _hlevel_conf = headings[_hlevel]
+            if 'size_factor' in _hlevel_conf and 'size' not in _hlevel_conf:
+                try:
+                    _factor = float(_hlevel_conf['size_factor'])
+                except (ValueError, TypeError):
+                    logger.warning("[Doxtr Core] Invalid size_factor '%s' in headings.%s; ignoring.",
+                                   _hlevel_conf['size_factor'], _hlevel)
+                    continue
+                if _factor <= 0:
+                    logger.warning("[Doxtr Core] size_factor must be positive in headings.%s (got %s); ignoring.",
+                                   _hlevel, _factor)
+                    continue
+                _computed_size = main_font_size_pt * _factor
+                _computed_bl = _computed_size * 1.2
+                _hlevel_conf['size'] = rf'\fontsize{{{_computed_size:.1f}pt}}{{{_computed_bl:.1f}pt}}\selectfont'
+
     draft = merge_section('draft')
     microtype = merge_section('microtype')
     epigraphs = merge_section('epigraphs')
@@ -208,9 +815,42 @@ def config_inited(app, config):
     containers = merge_section('containers')
     tables = merge_section('tables')
     figures = merge_section('figures')
-    code_blocks = merge_section('code')
+    code = merge_section('code')
     sidebar = merge_section('sidebar')
     highlights = merge_section('highlights')
+    topic = merge_section('topic')
+    contents = merge_section('contents')
+    toc = merge_section('toc')
+    bibliography = merge_section('bibliography')
+    index = merge_section('index')
+    glossary = merge_section('glossary')
+    links = merge_section('links')
+
+    # Collect all sections into a single dict for loop-based processing.
+    # Keys are the canonical config section names.
+    _sections = {
+        'title_page': tp,
+        'headings': headings,
+        'parts': parts,
+        'epigraphs': epigraphs,
+        'draft': draft,
+        'microtype': microtype,
+        'containers': containers,
+        'tables': tables,
+        'figures': figures,
+        'code': code,
+        'admonitions': admonitions,
+        'needs': needs,
+        'sidebar': sidebar,
+        'highlights': highlights,
+        'topic': topic,
+        'contents': contents,
+        'toc': toc,
+        'bibliography': bibliography,
+        'index': index,
+        'glossary': glossary,
+        'links': links,
+    }
 
     # --- CONFIGURATION VALIDATION ---
     # Warn about unknown keys in user-provided config sections (typo detection)
@@ -221,6 +861,13 @@ def config_inited(app, config):
     validate_config_keys(getattr(config, 'doxtr_microtype', {}), 'microtype')
     validate_config_keys(getattr(config, 'doxtr_sidebar', {}), 'sidebar')
     validate_config_keys(getattr(config, 'doxtr_highlights', {}), 'highlights')
+    validate_config_keys(getattr(config, 'doxtr_topic', {}), 'topic')
+    validate_config_keys(getattr(config, 'doxtr_contents', {}), 'contents')
+    validate_config_keys(getattr(config, 'doxtr_toc', {}), 'toc')
+    validate_config_keys(getattr(config, 'doxtr_bibliography', {}), 'bibliography')
+    validate_config_keys(getattr(config, 'doxtr_index', {}), 'index')
+    validate_config_keys(getattr(config, 'doxtr_glossary', {}), 'glossary')
+    validate_config_keys(getattr(config, 'doxtr_links', {}), 'links')
     # Validate container mapping: warn about targets that don't exist in containers config.
     # Pass the already-merged containers dict so theme-defined styles don't generate
     # false-positive warnings (theme defaults are not visible in config.doxtr_containers
@@ -238,37 +885,337 @@ def config_inited(app, config):
     parts_top_keys = {k for k in parts_user.keys() if not isinstance(k, int)}
     validate_config_keys({k: parts_user[k] for k in parts_top_keys}, 'parts')
 
-    # --- SEMANTIC COLOR SYSTEM ---
-    # Merge palette: core → theme → user
-    palette_core = DOXTR_SEMANTIC_PALETTE
-    palette_theme = theme_defaults.get('semantic_palette', {})
-    palette_user = getattr(config, 'doxtr_semantic_palette', {})
-    semantic_palette = deep_update(deep_update(copy.deepcopy(palette_core), palette_theme), palette_user)
-
-    # Get page background
-    page_bg = resolve_val('doxtr_page_background', 'page_background', '#FFFFFF')
-
-    # Get WCAG settings
-    wcag_level = resolve_val('doxtr_wcag_level', 'wcag_level', 4.5)
-    wcag_color_debug = resolve_val('doxtr_wcag_color_debug', 'wcag_color_debug', False)
-
-    # Collect all merged config sections for resolution
-    merged_configs = {
-        'admonitions': admonitions,
-        'needs': needs,
-        'containers': containers,
-        'tables': tables,
-        'figures': figures,
-        'code': code_blocks,
-        'headings': headings,
-        'parts': parts,
-        'title_page': tp,
-        'draft': draft,
-        'microtype': microtype,
-        'epigraphs': epigraphs,
-        'sidebar': sidebar,
-        'highlights': highlights,
+    # --- COLLECT DARK OVERRIDES ---
+    # Store dark sub-key overrides for all sections (used in Plan 06 dark activation)
+    config.doxtr_dark_overrides = {
+        name: collect_dark(name)
+        for name in CORE_CONFIG_MANIFEST.keys()
+        if name != 'globals'  # globals dark handled separately
     }
+    config.doxtr_dark_overrides['globals'] = collect_dark('globals', 'doxtr_globals')
+
+    # --- SEMANTIC COLOR SYSTEM ---
+    palette_core = DOXTR_SEMANTIC_PALETTE
+    palette_theme_raw = theme_defaults.get('semantic_palette', {})
+    palette_user_raw = getattr(config, 'doxtr_semantic_palette', {})
+
+    # Strip 'dark' sub-key before light merge (Plan 05)
+    palette_theme = {k: v for k, v in palette_theme_raw.items() if k != 'dark'}
+    palette_user = {k: v for k, v in palette_user_raw.items() if k != 'dark'}
+
+    # Deprecation shim: user-tier doxtr_page_background → semantic_palette['page']
+    _legacy_page_bg = getattr(config, 'doxtr_page_background', None)
+    if _legacy_page_bg is not None:
+        warn_deprecated(config, 'doxtr_page_background',
+                        "doxtr_semantic_palette['page']", 'global settings', '1.1.0')
+        palette_user = dict(palette_user)
+        palette_user.setdefault('page', _legacy_page_bg)
+
+    # Deprecation shim: theme-tier doxtr_theme_defaults['page_background']
+    _legacy_theme_page_bg = theme_defaults.get('page_background')
+    if _legacy_theme_page_bg is not None:
+        logger.warning(
+            "[Doxtr Core] 'page_background' in doxtr_theme_defaults is deprecated "
+            "and will be removed in v1.1.0. "
+            "Use doxtr_theme_defaults['semantic_palette']['page'] instead."
+        )
+        palette_theme = dict(palette_theme)
+        palette_theme.setdefault('page', _legacy_theme_page_bg)
+
+    # Deprecation shim: doxtr_dark_image_exclude_patterns → doxtr_image_exclude_patterns
+    _legacy_exclude = getattr(config, 'doxtr_dark_image_exclude_patterns', None)
+    if _legacy_exclude:
+        warn_deprecated(config, 'doxtr_dark_image_exclude_patterns',
+                        'doxtr_image_exclude_patterns', 'image processing', '1.1.0')
+        # Merge into the new key if user hasn't set it directly
+        _new_exclude = getattr(config, 'doxtr_image_exclude_patterns', None)
+        if not _new_exclude:
+            config.doxtr_image_exclude_patterns = list(_legacy_exclude)
+
+    # Three-tier merge: core → theme → user
+    semantic_palette = deep_update(
+        deep_update(copy.deepcopy(palette_core), copy.deepcopy(palette_theme)),
+        copy.deepcopy(palette_user),
+    )
+
+    # page_bg is sourced exclusively from the merged palette
+    page_bg = semantic_palette.get('page', '#FFFFFF')
+
+    # --- DARK SEMANTIC PALETTE ---
+    # Extract dark sub-key overrides from theme and user palette dicts
+    dark_palette_theme = palette_theme_raw.get('dark', {}) if isinstance(palette_theme_raw, dict) else {}
+    dark_palette_user = palette_user_raw.get('dark', {}) if isinstance(palette_user_raw, dict) else {}
+
+    # --- Resolve dark mode strategy EARLY (before palette generation) ---
+    # The strategy determines whether to invert palette colors or pass them
+    # through. We need the dark page color to auto-detect, but the full dark
+    # palette hasn't been computed yet. The page color comes exclusively from
+    # user-dark → theme-dark → core-default (never auto-generated).
+    _dark_page_early = (
+        dark_palette_user.get('page') or
+        dark_palette_theme.get('page') or
+        DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS['page']
+    )
+
+    # Guard: if the page color is a dd: expression or non-hex value,
+    # it cannot be resolved until palette merge completes. Fall back to
+    # the core default so auto-detection can proceed safely.
+    if not isinstance(_dark_page_early, str) or not _dark_page_early.startswith('#'):
+        logger.info(
+            f'[Doxtr Core] Dark page color \'{_dark_page_early}\' is not a hex value '
+            f'(possibly a dd: expression). Using core default for strategy detection.'
+        )
+        _dark_page_early = DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS['page']
+
+    # Resolve strategy from page luminance or explicit user setting.
+    # 'auto' (default): detects page luminance and uses _DARK_STRATEGY_LUMINANCE_THRESHOLD.
+    # 'invert': forces hex_dark_invert on all colors (current behavior).
+    # 'passthrough': skips inversion — only dd: expressions and dark_overrides
+    # provide differentiation, suitable for solarized/sepia/cream alternative themes.
+    _strategy_raw = getattr(config, 'doxtr_dark_mode_strategy', 'auto')
+    if _strategy_raw == 'auto':
+        dark_strategy, _page_lum = _auto_detect_dark_strategy(_dark_page_early)
+        logger.info(
+            f'[Doxtr Core] Dark mode strategy auto-detected: \'{dark_strategy}\' '
+            f'(page={_dark_page_early}, luminance={_page_lum:.3f}, '
+            f'threshold={_DARK_STRATEGY_LUMINANCE_THRESHOLD})'
+        )
+    elif _strategy_raw in _VALID_DARK_STRATEGIES:
+        dark_strategy = _strategy_raw
+    else:
+        logger.warning(
+            f"[Doxtr Core] Unknown doxtr_dark_mode_strategy '{_strategy_raw}'. "
+            f"Valid values: {_VALID_DARK_STRATEGIES}. Falling back to 'auto'."
+        )
+        dark_strategy, _page_lum = _auto_detect_dark_strategy(_dark_page_early)
+
+    # Store resolved strategy as a proper config value (survives pickle
+    # across incremental builds and is readable by build-finished hooks).
+    config.doxtr_dark_mode_strategy_resolved = dark_strategy
+
+    # Warn if passthrough mode with incomplete palette — users should provide
+    # a more complete dark palette for meaningful visual differentiation.
+    if dark_strategy == 'passthrough':
+        _user_dark_keys = set(dark_palette_user.keys()) - {'page'}
+        _theme_dark_keys = set(dark_palette_theme.keys()) - {'page'}
+        _provided_keys = _user_dark_keys | _theme_dark_keys
+        if len(_provided_keys) < _PASSTHROUGH_MIN_PALETTE_KEYS:
+            logger.warning(
+                f'[Doxtr Core] Dark mode strategy is \'passthrough\' (light page) '
+                f'but only {len(_provided_keys)} palette color(s) are overridden '
+                f'in dark:{{}}. In passthrough mode, only dd: expressions and '
+                f'dark_overrides provide visual differentiation from light mode. '
+                f'Consider providing a complete dark palette (primary, secondary, '
+                f'info, success, warning, danger) for meaningful differentiation.'
+            )
+
+    # Auto-generate dark palette with strategy awareness.
+    # In 'invert' mode: invert all light palette keys (existing behavior).
+    # In 'passthrough' mode: pass light palette through unchanged —
+    # light palette colors are already appropriate for a light page.
+    if dark_strategy == 'passthrough':
+        # Light palette values are correct for light dark-mode pages.
+        # dd:primary on a cream page should resolve to the original
+        # dark navy (#183060) not an inverted pastel (#AABBDE).
+        _dark_core = {**semantic_palette, 'page': _dark_page_early}
+    else:
+        # Standard: invert all light palette keys for dark page
+        _auto_dark = {}
+        for _key, _light_val in semantic_palette.items():
+            if _key == 'page':
+                continue
+            if not isinstance(_light_val, str) or not _light_val.startswith('#'):
+                _auto_dark[_key] = _light_val
+                continue
+            _inverted = hex_dark_invert(_light_val)
+            _auto_dark[_key] = _inverted if _inverted else _light_val
+        # Set core dark defaults: auto-generated keys + hardcoded page
+        _dark_core = {**_auto_dark, 'page': DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS['page']}
+
+    # Three-tier dark palette merge: core-auto → theme-dark → user-dark
+    dark_semantic_palette = deep_update(
+        deep_update(copy.deepcopy(_dark_core), copy.deepcopy(dark_palette_theme)),
+        copy.deepcopy(dark_palette_user),
+    )
+    config.doxtr_dark_semantic_palette = dark_semantic_palette
+
+    # WCAG settings already resolved from globals (g) above
+
+    # --- DARK MODE ACTIVATION ---
+    # When dark_mode is True, rebuild all section configs using soft inversion.
+    if dark_mode:
+        page_bg = dark_semantic_palette.get('page', DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS['page'])
+        semantic_palette = dark_semantic_palette
+
+        # Dark body text color: use user/theme override if set, else auto-derive
+        # from the dark page background using WCAG contrast enforcement.
+        # When page bg is dark (e.g. #242424), text will be light (#DBDBDB).
+        # When page bg is light (e.g. #FCF6E5), text will be dark (#000000).
+        _user_dark_text = getattr(config, 'doxtr_dark_text_color', None)
+        if _user_dark_text:
+            config.doxtr_dark_text_color = _user_dark_text
+        elif dark_strategy == 'passthrough':
+            # Light page: start from black and WCAG-adjust
+            _candidate_text = '#000000'
+            config.doxtr_dark_text_color = get_highest_contrast_color(
+                _candidate_text, page_bg, target='foreground',
+                wcag_level=wcag_level, color_debug=wcag_color_debug,
+            ) or _candidate_text
+        else:
+            # Dark page: invert black → off-white, then WCAG-adjust
+            _candidate_text = hex_dark_invert('#000000')  # #DBDBDB
+            config.doxtr_dark_text_color = get_highest_contrast_color(
+                _candidate_text, page_bg, target='foreground',
+                wcag_level=wcag_level, color_debug=wcag_color_debug,
+            )
+
+        _dark_overrides = config.doxtr_dark_overrides
+        for _name in list(_sections.keys()):
+            _sections[_name] = _build_dark_section(
+                _sections[_name], _dark_overrides.get(_name, {}), dark_strategy)
+
+        # Dark globals overrides
+        _dark_globals_overrides = _dark_overrides.get('globals', {})
+        if _dark_globals_overrides:
+            g = deep_update(copy.deepcopy(g), copy.deepcopy(_dark_globals_overrides))
+
+        # Resolve _dark variants for config-level asset paths.
+        # In passthrough mode (light page), keep the light assets — they are
+        # already appropriate for the light dark-mode page background.
+        if dark_strategy == 'invert':
+            _footer = g.get('footer_logo', '')
+            if _footer:
+                g['footer_logo'] = _resolve_dark_asset(_footer)
+            _tp_bg = _sections['title_page'].get('background_image', '')
+            if _tp_bg:
+                _sections['title_page']['background_image'] = _resolve_dark_asset(_tp_bg)
+            for _p_num, _p_conf in _sections['parts'].items():
+                if isinstance(_p_conf, dict) and _p_conf.get('image'):
+                    _p_conf['image'] = _resolve_dark_asset(_p_conf['image'])
+
+    # --- PAGE COLOR ADAPTATION ---
+    # Luminance-proportional remapping: shifts all theme colors to maintain
+    # their intended relationships when the page background differs from the
+    # theme's designed-for background. Runs AFTER dark mode processing and
+    # BEFORE dd: expression resolution.
+
+    # Determine designed_page (context-aware: depends on dark mode state)
+    if dark_mode and dark_strategy == 'invert':
+        # Colors are already inverted for the canonical dark page.
+        # The "designed for" reference is the dark palette's default page.
+        designed_page = DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS['page']  # '#242424'
+    else:
+        # Light mode or passthrough: designed against the theme's light page
+        designed_page = (
+            palette_theme_raw.get('page') or
+            DOXTR_SEMANTIC_PALETTE['page']  # '#FFFFFF'
+        )
+
+    # Guard: if the resolved designed_page is not a valid hex color
+    # (e.g., a dd: expression that hasn't been resolved yet), fall back
+    # to the appropriate default to prevent _get_luminance crashes.
+    if not isinstance(designed_page, str) or not designed_page.startswith('#'):
+        _fallback = (DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS['page']
+                     if (dark_mode and dark_strategy == 'invert')
+                     else '#FFFFFF')
+        logger.warning(
+            f"[Doxtr Core] designed_page '{designed_page}' is not a hex value. "
+            f"Using fallback {_fallback} for adaptation reference."
+        )
+        designed_page = _fallback
+
+    # Resolve doxtr_adapt_colors_to_page setting
+    _adapt_raw = getattr(config, 'doxtr_adapt_colors_to_page', 'auto')
+    # Valid explicit boolean-like values that to_bool handles correctly
+    _ADAPT_BOOL_TRUE = (True, 1, 'true', '1', 'yes')
+    _ADAPT_BOOL_FALSE = (False, 0, 'false', '0', 'no', 'none')
+
+    if _adapt_raw == 'auto':
+        # Auto-detect: adapt when page differs significantly from designed page
+        _lum_diff = abs(_get_luminance(designed_page) - _get_luminance(page_bg))
+        adapt_to_page = _lum_diff >= _ADAPTATION_LUMINANCE_THRESHOLD
+        if adapt_to_page:
+            logger.info(
+                f'[Doxtr Core] Page adaptation auto-enabled: designed={designed_page} '
+                f'\u2192 actual={page_bg} (\u0394L={_lum_diff:.4f} \u2265 {_ADAPTATION_LUMINANCE_THRESHOLD})'
+            )
+        else:
+            logger.debug(
+                f'[Doxtr Core] Page adaptation auto-skipped: designed={designed_page} '
+                f'\u2192 actual={page_bg} (\u0394L={_lum_diff:.4f} < {_ADAPTATION_LUMINANCE_THRESHOLD})'
+            )
+    elif _adapt_raw in _ADAPT_BOOL_TRUE:
+        adapt_to_page = True
+    elif _adapt_raw in _ADAPT_BOOL_FALSE:
+        adapt_to_page = False
+    else:
+        logger.warning(
+            f"[Doxtr Core] Unknown doxtr_adapt_colors_to_page value '{_adapt_raw}'. "
+            f"Valid: 'auto', True, False. Falling back to 'auto'."
+        )
+        _lum_diff = abs(_get_luminance(designed_page) - _get_luminance(page_bg))
+        adapt_to_page = _lum_diff >= _ADAPTATION_LUMINANCE_THRESHOLD
+
+    # Apply adaptation when active
+    compress_dark = 1.0
+    compress_light = 1.0
+    if adapt_to_page:
+        compress_dark, compress_light = _compute_adaptation_compression(
+            _get_luminance(designed_page), _get_luminance(page_bg))
+
+        # Adapt the semantic palette itself (so dd: expressions resolve
+        # against adapted colors)
+        adapted_palette = {}
+        for _pk, _pv in semantic_palette.items():
+            if _pk == 'page':
+                adapted_palette[_pk] = page_bg  # Page stays as user set it
+            elif isinstance(_pv, str) and _pv.startswith('#'):
+                adapted_palette[_pk] = adapt_color_to_page(
+                    _pv, designed_page, page_bg, compress_dark, compress_light)
+            else:
+                adapted_palette[_pk] = _pv
+        semantic_palette = adapted_palette
+
+        # Adapt all built-in section configs
+        for _name in list(_sections.keys()):
+            _sections[_name] = _adapt_colors_in_dict(
+                _sections[_name], designed_page, page_bg, compress_dark, compress_light)
+
+    # Mid-grey warning: limited dynamic range for decorative elements
+    _actual_lum = _get_luminance(page_bg)
+    if adapt_to_page and _ADAPTATION_MID_GREY_LOW <= _actual_lum <= _ADAPTATION_MID_GREY_HIGH:
+        logger.warning(
+            f'[Doxtr Core] Page adaptation active with a mid-grey page background '
+            f'({page_bg}, luminance={_actual_lum:.3f}). Mid-grey pages have limited '
+            f'dynamic range \u2014 colors will be compressed significantly. WCAG '
+            f'enforcement will correct text/icon contrast, but decorative elements '
+            f'may lose visual distinction. Consider providing explicit palette '
+            f'overrides for best results.'
+        )
+
+    # Proactive hint when adaptation is NOT active but page differs significantly
+    if not adapt_to_page and not dark_mode:
+        _hint_diff = abs(_get_luminance(designed_page) - _get_luminance(page_bg))
+        if _hint_diff >= _ADAPTATION_HINT_THRESHOLD:
+            logger.info(
+                f'[Doxtr Core] Page background ({page_bg}) differs from design '
+                f'reference ({designed_page}) by \u0394L={_hint_diff:.3f}. Set '
+                f'doxtr_adapt_colors_to_page=True (or "auto") to automatically '
+                f'adjust theme colors for this background.'
+            )
+
+    # Stash adaptation state on config for child themes that need to
+    # replace or extend adaptation logic at a lower-priority config-inited hook.
+    config.doxtr_adaptation_state = {
+        'active': adapt_to_page,
+        'designed_page': designed_page,
+        'actual_page': page_bg,
+        'compress_dark': compress_dark,
+        'compress_light': compress_light,
+    }
+
+    # Use the _sections dict as merged_configs for color resolution
+    merged_configs = _sections
 
     # -----------------------------------------------------------------------
     # COLOR RESOLUTION — TWO-PASS STRATEGY
@@ -287,33 +1234,249 @@ def config_inited(app, config):
         )
 
     # -----------------------------------------------------------------------
-    # INHERITANCE
-    # Copy font/color/size down the heading/epigraph hierarchy.
-    # After this pass, inherited values may be dd: expressions from a parent
-    # level that were not present in the child's original dict.
+    # COLOR RESOLUTION — PASS 2 runs after the TEXT INHERITANCE LOGIC block
+    # inside `if preamble_path is not None:` below.  It resolves intra-section
+    # dd:this: cross-references where key iteration order in Pass 1 left
+    # sibling keys unresolved (e.g. dd:this:title_background_color iterated
+    # before title_background_color was itself resolved).
+    # NOTE: TEXT INHERITANCE LOGIC only reads/writes template_vars (CMYK
+    # strings), never merged_configs.  Pass 2 does not benefit from
+    # inheritance propagation; merged_configs is unchanged by that block.
     # -----------------------------------------------------------------------
-    # (inheritance logic follows in the existing code below)
-
-    # -----------------------------------------------------------------------
-    # COLOR RESOLUTION — PASS 2
-    # Re-resolve dd: expressions that appeared via inheritance.
-    # -----------------------------------------------------------------------
-    for section_name, section_dict in merged_configs.items():
-        resolve_all_colors(
-            section_dict, semantic_palette, page_bg, section_name,
-            theme_defaults, CORE_CONFIG_MANIFEST,
-            getattr(config, 'doxtr_' + section_name, {}),
-            root_config=merged_configs,
-            wcag_level=wcag_level, wcag_color_debug=wcag_color_debug,
-        )
 
     # Store merged containers back into config so AST walkers can access them
-    config.doxtr_containers = containers
+    config.doxtr_containers = _sections['containers']
 
     pkg_dir = Path(__file__).parent.resolve()
-    preamble_path = pkg_dir / "preamble.tex_t"
-    
-    if preamble_path.exists():
+
+    # --- Post-merge config transform hooks ---
+    # Invoke registered transforms after all merging, dark mode, page adaptation,
+    # and dd: resolution (Pass 1) are complete, but before template rendering.
+    for hook_fn in _config_transform_hooks:
+        hook_fn(_sections, semantic_palette, config)
+
+    # --- Return pipeline context for subsequent stages ---
+    return {
+        'g': g,
+        'theme_defaults': theme_defaults,
+        'theme_style_paths': theme_style_paths,
+        'resolve_val': resolve_val,
+        'dark_mode': dark_mode,
+        'wcag_level': wcag_level,
+        'wcag_color_debug': wcag_color_debug,
+        'main_font_size_str': main_font_size_str,
+        'main_font_size_pt': main_font_size_pt,
+        'tp': _sections['title_page'],
+        'headings': _sections['headings'],
+        'parts': _sections['parts'],
+        'draft': _sections['draft'],
+        'microtype': _sections['microtype'],
+        'epigraphs': _sections['epigraphs'],
+        'admonitions': _sections['admonitions'],
+        'needs': _sections['needs'],
+        'containers': _sections['containers'],
+        'tables': _sections['tables'],
+        'figures': _sections['figures'],
+        'code': _sections['code'],
+        'sidebar': _sections['sidebar'],
+        'highlights': _sections['highlights'],
+        'topic': _sections['topic'],
+        'contents': _sections['contents'],
+        'toc': _sections['toc'],
+        'bibliography': _sections['bibliography'],
+        'index': _sections['index'],
+        'glossary': _sections['glossary'],
+        'links': _sections['links'],
+        'semantic_palette': semantic_palette,
+        'page_bg': page_bg,
+        'adapt_to_page': adapt_to_page,
+        'designed_page': designed_page,
+        'compress_dark': compress_dark,
+        'compress_light': compress_light,
+        'merged_configs': merged_configs,
+        'pkg_dir': pkg_dir,
+    }
+
+
+def _wcag_enforce_title_colors(conf, bg_key_or_color, wcag_level, color_debug,
+                                font_key='title_font_color', icon_key='title_icon_color',
+                                font_default='#FFFFFF', icon_default=None):
+    """Enforce WCAG contrast for title text and icon colors against a background.
+
+    Adjusts font and icon colors to meet the configured WCAG contrast ratio
+    against the title background. Stores results as *_cmyk keys in conf.
+
+    Args:
+        conf: The section config dict. Mutated: sets '{font_key}_cmyk' and '{icon_key}_cmyk'.
+        bg_key_or_color: Either a key name in conf to look up, or a direct hex color string.
+        wcag_level: WCAG contrast ratio threshold.
+        color_debug: Whether to log WCAG adjustments.
+        font_key: Config key for the font color (default: 'title_font_color').
+        icon_key: Config key for the icon color (default: 'title_icon_color').
+                  Pass None to skip icon enforcement.
+        font_default: Default font color if key is not set.
+        icon_default: Default icon color if key is not set. None = use font_default.
+    """
+    if icon_default is None:
+        icon_default = font_default
+    # Resolve background: if bg_key_or_color starts with '#', treat as direct color;
+    # otherwise look it up in conf.
+    if bg_key_or_color.startswith('#'):
+        bg_color = bg_key_or_color
+    else:
+        bg_color = conf.get(bg_key_or_color) or font_default
+
+    # Font color enforcement
+    _font = conf.get(font_key) or font_default
+    _font = get_highest_contrast_color(_font, bg_color, target='foreground',
+                                       wcag_level=wcag_level, color_debug=color_debug) or _font
+    conf[f'{font_key}_cmyk'] = safe_cmyk(_font)
+
+    # Icon color enforcement
+    if icon_key is not None:
+        _icon = conf.get(icon_key) or icon_default
+        _icon = get_highest_contrast_color(_icon, bg_color, target='foreground',
+                                           wcag_level=wcag_level, color_debug=color_debug) or _icon
+        conf[f'{icon_key}_cmyk'] = safe_cmyk(_icon)
+
+
+def _process_box_section(conf_dict, section_name, page_bg, wcag_level, color_debug,
+                          default_icon='', template_type=None):
+    """Process a box-style section (topic/contents): copy, WCAG enforce, set defaults.
+
+    Args:
+        conf_dict: The merged section config (topic or contents).
+        section_name: Name for logging (e.g. 'topic', 'contents').
+        page_bg: Current page background color.
+        wcag_level: WCAG contrast ratio.
+        color_debug: Whether to log adjustments.
+        default_icon: Default title_icon value.
+        template_type: Template type name (defaults to section_name).
+
+    Returns:
+        The processed config dict ready for template rendering.
+    """
+    if template_type is None:
+        template_type = section_name
+
+    box_conf = conf_dict.copy()
+    _title_bg = box_conf.get('title_background_color') or '#1E3A6E'
+    box_conf['title_background_color_cmyk'] = safe_cmyk(_title_bg)
+    # WCAG contrast enforcement: ensure title text and icon are
+    # readable against the title background.
+    _wcag_enforce_title_colors(box_conf, _title_bg, wcag_level, color_debug)
+    box_conf['content_background_color_cmyk'] = safe_cmyk(box_conf.get('content_background_color') or '#F0F4FA')
+    box_conf['content_font_color_cmyk'] = safe_cmyk(box_conf.get('content_font_color') or '#1A1A2E')
+    box_conf['border_color_cmyk'] = safe_cmyk(box_conf.get('border_color') or '#3A5A8E')
+    box_conf['bottom_frame_color_cmyk'] = safe_cmyk(box_conf.get('bottom_frame_color') or _title_bg)
+    box_conf['cutaway_fill_color_cmyk'] = safe_cmyk(box_conf.get('cutaway_fill_color') or page_bg)
+    box_conf.setdefault('title_icon', default_icon)
+    box_conf.setdefault('title_font', 'Montserrat')
+    box_conf.setdefault('title_font_size', r'\large\bfseries')
+    box_conf.setdefault('content_font', '')
+    box_conf.setdefault('content_font_size', r'\normalsize')
+    box_conf.setdefault('border_width', '0.8pt')
+    box_conf.setdefault('cutaway_depth', '12pt')
+    box_conf.setdefault('bottom_frame_height', '3pt')
+    box_conf.setdefault('before_skip', '1.5em plus 0.5em minus 0.5em')
+    box_conf.setdefault('after_skip', '1.5em plus 0.5em minus 0.5em')
+    return box_conf
+
+
+def _stage_build_and_render_preamble(app, config, ctx):
+    """Pipeline Stage 2: Build template variables and render preamble.
+
+    Performs the following in order:
+    - Preamble template resolution (multi-tier override search)
+    - Container color processing (CMYK conversion, WCAG enforcement)
+    - Table color processing
+    - Globals injection into template_vars
+    - Dark mode template variables
+    - Title page variables
+    - Draft watermark variables
+    - Microtype variables
+    - Parts processing (background images, colors)
+    - Heading provenance tracking + heading variables
+    - Epigraph variables (per-level cascade)
+    - Text inheritance logic (font/color/size propagation)
+    - Color resolution Pass 2 (intra-section dd:this: cross-references)
+    - Admonition CMYK processing + WCAG enforcement
+    - Needs processing
+    - Template resolution engine (all style types)
+    - Custom style type registry processing
+    - TOC / Bibliography / Index / Glossary injection
+    - Final preamble rendering
+
+    Args:
+        app: The Sphinx application object.
+        config: The Sphinx config object. Mutated: adds to latex_additional_files.
+        ctx: Pipeline context dict from _stage_merge_and_resolve(). Mutated: adds
+             'template_vars' and 'my_preamble' keys.
+
+    Side effects:
+        - Adds files to config.latex_additional_files
+        - Adds 'template_vars' and 'my_preamble' to ctx
+    """
+    # Unpack context for readability
+    g = ctx['g']
+    theme_defaults = ctx['theme_defaults']
+    theme_style_paths = ctx['theme_style_paths']
+    resolve_val = ctx['resolve_val']
+    dark_mode = ctx['dark_mode']
+    wcag_level = ctx['wcag_level']
+    wcag_color_debug = ctx['wcag_color_debug']
+    main_font_size_str = ctx['main_font_size_str']
+    main_font_size_pt = ctx['main_font_size_pt']
+    tp = ctx['tp']
+    headings = ctx['headings']
+    parts = ctx['parts']
+    draft = ctx['draft']
+    microtype = ctx['microtype']
+    epigraphs = ctx['epigraphs']
+    admonitions = ctx['admonitions']
+    needs = ctx['needs']
+    containers = ctx['containers']
+    tables = ctx['tables']
+    figures = ctx['figures']
+    code = ctx['code']
+    sidebar = ctx['sidebar']
+    highlights = ctx['highlights']
+    topic = ctx['topic']
+    contents = ctx['contents']
+    toc = ctx['toc']
+    bibliography = ctx['bibliography']
+    index = ctx['index']
+    glossary = ctx['glossary']
+    links = ctx['links']
+    semantic_palette = ctx['semantic_palette']
+    page_bg = ctx['page_bg']
+    adapt_to_page = ctx['adapt_to_page']
+    designed_page = ctx['designed_page']
+    compress_dark = ctx['compress_dark']
+    compress_light = ctx['compress_light']
+    merged_configs = ctx['merged_configs']
+    pkg_dir = ctx['pkg_dir']
+
+    # --- PREAMBLE RESOLUTION (multi-tier override) ---
+    # Search order:
+    # 1. doxtr_preamble_path — custom directory under confdir or srcdir
+    # 2. theme_style_paths   — preamble/preamble.tex_t under each theme path
+    # 3. Core package fallback — pkg_dir/preamble.tex_t (always present)
+    # Theme authors: set doxtr_preamble_path = 'my_preamble_dir' in conf.py,
+    # then place preamble.tex_t in <confdir>/my_preamble_dir/.
+    _preamble_candidates = []
+    _preamble_override_folder = getattr(config, 'doxtr_preamble_path', None)
+    if _preamble_override_folder:
+        _preamble_candidates.extend([
+            Path(app.confdir) / _preamble_override_folder / "preamble.tex_t",
+            Path(app.srcdir) / _preamble_override_folder / "preamble.tex_t",
+        ])
+    for _t_path in theme_style_paths:
+        _preamble_candidates.append(Path(_t_path) / "preamble" / "preamble.tex_t")
+    _preamble_candidates.append(pkg_dir / "preamble.tex_t")  # core fallback — keep in place
+    preamble_path = next((p for p in _preamble_candidates if p.exists()), None)
+
+    if preamble_path is not None:
         env = Environment(block_start_string='<%', block_end_string='%>', variable_start_string='<<', variable_end_string='>>', comment_start_string='<#', comment_end_string='#>')
         template = env.from_string(preamble_path.read_text(encoding="utf-8"))
         template_vars = {}
@@ -328,12 +1491,28 @@ def config_inited(app, config):
                 continue
             t_color = c_conf.get('title_color', '#000000')
             c_conf['title_color_cmyk'] = safe_cmyk(t_color)
-            c_conf['title_font_color_cmyk'] = safe_cmyk(c_conf.get('title_font_color') or get_highest_contrast_color(t_color, t_color, target='foreground', wcag_level=wcag_level, color_debug=wcag_color_debug))
-            c_conf['title_icon_color_cmyk'] = safe_cmyk(c_conf.get('title_icon_color') or c_conf.get('title_font_color') or '#FFFFFF')
+            # WCAG contrast enforcement: ensure title text and icon are readable
+            # against the ACTUAL title background. For most container styles,
+            # title_color IS the title background (colbacktitle in tcolorbox).
+            # For folder-style containers, the actual background is
+            # title_background_color (a separate key). Use the actual bg for
+            # contrast checks to avoid adjusting against the wrong surface.
+            _title_actual_bg = c_conf.get('title_background_color') or t_color
+            # If no explicit title_font_color, auto-generate one that contrasts
+            # against the title background (passing it as both fg and bg forces
+            # the function to produce a contrasting foreground from scratch).
+            _title_font = c_conf.get('title_font_color') or get_highest_contrast_color(_title_actual_bg, _title_actual_bg, target='foreground', wcag_level=wcag_level, color_debug=wcag_color_debug)
+            _title_font = get_highest_contrast_color(_title_font, _title_actual_bg, target='foreground', wcag_level=wcag_level, color_debug=wcag_color_debug) or _title_font
+            c_conf['title_font_color_cmyk'] = safe_cmyk(_title_font)
+            _title_icon = c_conf.get('title_icon_color') or c_conf.get('title_font_color') or '#FFFFFF'
+            _title_icon = get_highest_contrast_color(_title_icon, _title_actual_bg, target='foreground', wcag_level=wcag_level, color_debug=wcag_color_debug) or _title_icon
+            c_conf['title_icon_color_cmyk'] = safe_cmyk(_title_icon)
             c_conf['content_font_color_cmyk'] = safe_cmyk(c_conf.get('content_font_color') or '#000000')
-            c_conf['content_background_color_cmyk'] = safe_cmyk(c_conf.get('content_background_color') or '#FFFFFF')
+            # Fallback to page_bg (not hardcoded #FFFFFF) so containers with
+            # unset background match the document page in both light and dark mode.
+            c_conf['content_background_color_cmyk'] = safe_cmyk(c_conf.get('content_background_color') or page_bg)
             # Folder-specific color fields (safe for all containers — no-ops if keys absent)
-            c_conf['title_background_color_cmyk'] = safe_cmyk(c_conf.get('title_background_color') or c_conf.get('content_background_color') or '#FFFFFF')
+            c_conf['title_background_color_cmyk'] = safe_cmyk(c_conf.get('title_background_color') or c_conf.get('content_background_color') or page_bg)
             c_conf['shadow_color_cmyk'] = safe_cmyk(c_conf.get('shadow_color') or '#C0C0C0')
             c_conf.setdefault('show_shadow', True)
             c_conf['show_shadow'] = to_bool(c_conf.get('show_shadow'), default=True)
@@ -385,24 +1564,43 @@ def config_inited(app, config):
         template_vars['doxtr_tables'] = tables
 
         # --- GLOBALS ---
-        template_vars['doxtr_show_release'] = resolve_val('doxtr_show_release', 'show_release', True)
-        template_vars['doxtr_show_list_of_figures'] = resolve_val('doxtr_show_list_of_figures', 'show_list_of_figures', False)
-        template_vars['doxtr_show_list_of_tables'] = resolve_val('doxtr_show_list_of_tables', 'show_list_of_tables', False)
-        template_vars['doxtr_show_list_of_listings'] = resolve_val('doxtr_show_list_of_listings', 'show_list_of_listings', False)
-        template_vars['doxtr_appendix_chapter_numbering'] = resolve_val('doxtr_appendix_chapter_numbering', 'appendix_chapter_numbering', True)
-        template_vars['doxtr_headsep'] = resolve_val('doxtr_headsep', 'headsep', '8mm')
-        template_vars['doxtr_footskip'] = resolve_val('doxtr_footskip', 'footskip', '10mm')
-        template_vars['doxtr_headheight'] = resolve_val('doxtr_headheight', 'headheight', '18pt')
-        template_vars['doxtr_footheight'] = resolve_val('doxtr_footheight', 'footheight', '25pt')
+        template_vars['doxtr_show_release'] = g.get('show_release', True)
+        template_vars['doxtr_show_list_of_figures'] = g.get('show_list_of_figures', False)
+        template_vars['doxtr_show_list_of_tables'] = g.get('show_list_of_tables', False)
+        template_vars['doxtr_show_list_of_listings'] = g.get('show_list_of_listings', False)
+        template_vars['doxtr_appendix_chapter_numbering'] = g.get('appendix_chapter_numbering', True)
+        template_vars['doxtr_headsep'] = g.get('headsep', '8mm')
+        template_vars['doxtr_footskip'] = g.get('footskip', '10mm')
+        template_vars['doxtr_headheight'] = g.get('headheight', '18pt')
+        template_vars['doxtr_footheight'] = g.get('footheight', '25pt')
+        template_vars['doxtr_main_font_size'] = main_font_size_str
+        template_vars['doxtr_main_font_size_pt'] = main_font_size_pt
         template_vars['extensions'] = getattr(config, 'extensions', [])
 
-        footer_logo = resolve_val('doxtr_footer_logo', 'footer_logo', None)
+        # --- DARK MODE TEMPLATE VARIABLES ---
+        # Pass dark mode state and colors to the preamble template for
+        # page background and body text color rendering.
+        template_vars['doxtr_dark_mode'] = dark_mode
+        template_vars['doxtr_page_bg_cmyk'] = safe_cmyk(page_bg)
+        # Emit \pagecolor when page_bg is not white — needed for both dark mode
+        # AND light-mode adaptation where the page color differs from LaTeX default.
+        template_vars['doxtr_emit_pagecolor'] = (
+            dark_mode or (adapt_to_page and page_bg != '#FFFFFF')
+        )
+        if dark_mode:
+            # Maps config.doxtr_dark_text_color (hex) → RGB for preamble template
+            _dark_text_color = getattr(config, 'doxtr_dark_text_color', '#DBDBDB')
+            template_vars['doxtr_body_text_color_cmyk'] = safe_cmyk(_dark_text_color)
+        else:
+            template_vars['doxtr_body_text_color_cmyk'] = safe_cmyk('#000000')
+
+        footer_logo = g.get('footer_logo', '')
         if footer_logo and isinstance(footer_logo, str):
             if footer_logo not in config.latex_additional_files: config.latex_additional_files.append(footer_logo)
             template_vars['doxtr_footer_logo'] = os.path.basename(footer_logo)
         else:
             template_vars['doxtr_footer_logo'] = None
-        template_vars['doxtr_footer_logo_height'] = resolve_val('doxtr_footer_logo_height', 'footer_logo_height', '1.5em')
+        template_vars['doxtr_footer_logo_height'] = g.get('footer_logo_height', '1.5em')
 
         # --- TITLE PAGE ---
         template_vars['doxtr_subtitle'] = tp.get('subtitle', None)
@@ -465,13 +1663,7 @@ def config_inited(app, config):
             draft_color_str = draft.get('color', '#00000044')
             draft_opacity = "1.0"
             if draft_color_str:
-                clean_hex = draft_color_str.lstrip('#')
-                if len(clean_hex) == 8:
-                    draft_opacity = str(round(int(clean_hex[6:8], 16) / 255.0, 2))
-                    draft_color_str = f"#{clean_hex[:6]}"
-                elif len(clean_hex) == 4:
-                    draft_opacity = str(round(int(clean_hex[3] * 2, 16) / 255.0, 2))
-                    draft_color_str = f"#{clean_hex[:3]}"
+                draft_color_str, draft_opacity = _split_hex_opacity(draft_color_str)
                 template_vars['doxtr_draft_color_cmyk'] = safe_cmyk(draft_color_str)
                 template_vars['doxtr_draft_opacity'] = draft_opacity
 
@@ -511,13 +1703,7 @@ def config_inited(app, config):
                 cmyk = None
                 opacity = "1.0"
                 if color_str:
-                    clean_hex = color_str.lstrip('#')
-                    if len(clean_hex) == 8:
-                        opacity = str(round(int(clean_hex[6:8], 16) / 255.0, 2))
-                        color_str = f"#{clean_hex[:6]}"
-                    elif len(clean_hex) == 4:
-                        opacity = str(round(int(clean_hex[3] * 2, 16) / 255.0, 2))
-                        color_str = f"#{clean_hex[:3]}"
+                    color_str, opacity = _split_hex_opacity(color_str)
                     cmyk = safe_cmyk(color_str)
                     
                 processed_part_bgs[p_num] = {
@@ -541,19 +1727,52 @@ def config_inited(app, config):
             template_vars[f'doxtr_{el}_font'] = parts.get(f'{prefix}font', None)
             template_vars[f'doxtr_{el}_size'] = parts.get(f'{prefix}size', None)
             c_val = parts.get(f'{prefix}color', None)
+            # WCAG contrast enforcement: ensure part text colors are readable
+            # against the page background. The core default 'color' is #FFFFFF
+            # (white for dark part-page backgrounds in light mode), which after
+            # hex_dark_invert becomes #242424 — the same as the dark page bg,
+            # making the text invisible. Auto-adjust to meet contrast threshold.
+            if c_val:
+                c_val = get_highest_contrast_color(c_val, page_bg, target='foreground', wcag_level=wcag_level, color_debug=wcag_color_debug) or c_val
             template_vars[f'doxtr_{el}_color'] = safe_cmyk(c_val) if c_val else ""
 
         # --- HEADING PROVENANCE: track which per-level font/color/size/margin_space keys
         # were explicitly set by theme or user (not merely inherited from core defaults).
         # This is used by the inheritance logic to treat core-only values as inheritable.
+        # We also mark keys that have a core-default value as "explicit" so that a
+        # parent's core-default (e.g. part.color='#FFFFFF' for a dark background) does
+        # not cascade down and overwrite a sibling core-default (e.g. chapter.color='#183060').
+        # Inheritance from part→chapter is only meaningful when the theme/user explicitly
+        # sets part.color — not when it's just the core default.
         _heading_explicit = set()
         _theme_headings = theme_defaults.get('headings', {})
         _user_headings  = getattr(config, 'doxtr_headings', {}) or {}
+        _core_headings  = CORE_CONFIG_MANIFEST.get('headings', {})
         for _el in ['part', 'chapter', 'section', 'subsection', 'subsubsection']:
+            # Mark keys that have a core-default value as protected from cascade-overwrite.
+            # Only theme/user explicit values are allowed to cascade.
+            _core_el = _core_headings.get(_el, {})
+            for _prop in ['font', 'color', 'size']:
+                if _core_el.get(_prop) is not None:
+                    _heading_explicit.add(f'doxtr_{_el}_{_prop}')
+                # size_factor is equivalent to an explicit size for provenance purposes
+                if _prop == 'size' and _core_el.get('size_factor') is not None:
+                    _heading_explicit.add(f'doxtr_{_el}_{_prop}')
+                if _core_el.get(f'number_{_prop}') is not None:
+                    _heading_explicit.add(f'doxtr_{_el}_number_{_prop}')
+                if _core_el.get(f'line_{_prop}') is not None:
+                    _heading_explicit.add(f'doxtr_{_el}_line_{_prop}')
+            # Also protect margin_space from cascade when set in core defaults
+            if 'margin_space' in _core_el:
+                _heading_explicit.add(f'doxtr_{_el}_margin_space')
+            # Theme and user overrides are also explicit (and override the core protection).
             for _tier in (_theme_headings, _user_headings):
                 _el_tier = _tier.get(_el, {})
                 for _prop in ['font', 'color', 'size']:
                     if _prop in _el_tier:
+                        _heading_explicit.add(f'doxtr_{_el}_{_prop}')
+                    # size_factor is equivalent to an explicit size for provenance purposes
+                    if _prop == 'size' and 'size_factor' in _el_tier:
                         _heading_explicit.add(f'doxtr_{_el}_{_prop}')
                     # Also track number_<prop> and line_<prop> as explicit
                     if f'number_{_prop}' in _el_tier:
@@ -567,6 +1786,8 @@ def config_inited(app, config):
         global_align = headings.get('align', 'alternate')
         global_margin = headings.get('numbers_in_margin', True)
         global_margin_space = headings.get('margin_space', '1.5em')
+        global_number_sep = headings.get('number_sep', r'\marginparsep')
+        global_xheight_match = headings.get('number_match_title_xheight', False)
         for el in ['chapter', 'section', 'subsection', 'subsubsection']:
             el_dict = headings.get(el, {})
             template_vars[f'doxtr_{el}_align'] = el_dict.get('align', global_align)
@@ -574,20 +1795,50 @@ def config_inited(app, config):
             template_vars[f'doxtr_{el}_number_line'] = el_dict.get('number_line', True if el == 'chapter' else False)
             template_vars[f'doxtr_{el}_line_height'] = el_dict.get('line_height', '10cm')
             template_vars[f'doxtr_{el}_margin_space'] = el_dict.get('margin_space', global_margin_space)
+            template_vars[f'doxtr_{el}_number_sep'] = el_dict.get('number_sep', global_number_sep)
             template_vars[f'doxtr_{el}_font'] = el_dict.get('font', None)
             template_vars[f'doxtr_{el}_size'] = el_dict.get('size', None)
             
             hc = el_dict.get('color', None)
+            if hc and isinstance(hc, str) and hc.startswith('dd:'):
+                logger.warning(
+                    f"[Doxtr Core] Unresolved color expression '{hc}' in "
+                    f"headings.{el}.color after two-pass resolution. "
+                    f"Check for circular references or invalid dd: syntax."
+                )
             template_vars[f'doxtr_{el}_color'] = safe_cmyk(hc) if hc else ""
             
             template_vars[f'doxtr_{el}_number_font'] = el_dict.get('number_font', None)
             template_vars[f'doxtr_{el}_number_size'] = el_dict.get('number_size', None)
             
             hnc = el_dict.get('number_color', None)
+            if hnc and isinstance(hnc, str) and hnc.startswith('dd:'):
+                logger.warning(
+                    f"[Doxtr Core] Unresolved color expression '{hnc}' in "
+                    f"headings.{el}.number_color after two-pass resolution. "
+                    f"Check for circular references or invalid dd: syntax."
+                )
             template_vars[f'doxtr_{el}_number_color'] = safe_cmyk(hnc) if hnc else ""
             
             hlc = el_dict.get('line_color', None)
+            if hlc and isinstance(hlc, str) and hlc.startswith('dd:'):
+                logger.warning(
+                    f"[Doxtr Core] Unresolved color expression '{hlc}' in "
+                    f"headings.{el}.line_color after two-pass resolution. "
+                    f"Check for circular references or invalid dd: syntax."
+                )
             template_vars[f'doxtr_{el}_line_color'] = safe_cmyk(hlc) if hlc else ""
+
+            # X-height scaling: per-level override or global fallback.
+            # chapter is always excluded — the feature only applies to body-text sectioning levels.
+            # to_bool() coerces strings ('true'/'false'/'yes'/'no'/'1'/'0') to bool so that
+            # conf.py typos like number_match_title_xheight = 'false' don't silently enable the feature.
+            if el != 'chapter':
+                template_vars[f'doxtr_{el}_number_match_title_xheight'] = to_bool(
+                    el_dict.get('number_match_title_xheight', global_xheight_match), default=False)
+            # chapter: never set a template var — the preamble loop only iterates
+            # section/subsection/subsubsection, so this key would be dead. Omitting it
+            # avoids giving theme authors the false impression that chapter can be controlled.
 
         # --- EPIGRAPHS ---
         align_map = {'left': r'\raggedright', 'right': r'\raggedleft', 'center': r'\centering'}
@@ -600,12 +1851,24 @@ def config_inited(app, config):
         template_vars['doxtr_epigraph_size'] = epigraphs.get('size', None)
         
         ec = epigraphs.get('color', None)
+        if ec and isinstance(ec, str) and ec.startswith('dd:'):
+            logger.warning(
+                f"[Doxtr Core] Unresolved color expression '{ec}' in "
+                f"epigraphs.color after two-pass resolution. "
+                f"Check for circular references or invalid dd: syntax."
+            )
         template_vars['doxtr_epigraph_color'] = safe_cmyk(ec) if ec else ""
         
         template_vars['doxtr_epigraph_author_font'] = epigraphs.get('author_font', None)
         template_vars['doxtr_epigraph_author_size'] = epigraphs.get('author_size', None)
         
         eac = epigraphs.get('author_color', None)
+        if eac and isinstance(eac, str) and eac.startswith('dd:'):
+            logger.warning(
+                f"[Doxtr Core] Unresolved color expression '{eac}' in "
+                f"epigraphs.author_color after two-pass resolution. "
+                f"Check for circular references or invalid dd: syntax."
+            )
         template_vars['doxtr_epigraph_author_color'] = safe_cmyk(eac) if eac else ""
 
         for idx, level in enumerate(['part', 'chapter', 'section', 'subsection', 'subsubsection']):
@@ -620,11 +1883,18 @@ def config_inited(app, config):
                 template_vars[f'doxtr_{level}_epigraph_{prop}'] = val_mapped
             for prop in ['font', 'size', 'color', 'author_font', 'author_size', 'author_color']:
                 val = el_dict.get(prop, template_vars.get(f'doxtr_{["epigraph", "part_epigraph", "chapter_epigraph", "section_epigraph", "subsection_epigraph"][idx]}_{prop}' if idx > 0 else f'doxtr_epigraph_{prop}'))
-                if val and 'color' in prop: val = safe_cmyk(val)
+                if val and 'color' in prop:
+                    if isinstance(val, str) and val.startswith('dd:'):
+                        logger.warning(
+                            f"[Doxtr Core] Unresolved color expression '{val}' in "
+                            f"epigraphs.{level}.{prop} after two-pass resolution. "
+                            f"Check for circular references or invalid dd: syntax."
+                        )
+                    val = safe_cmyk(val)
                 template_vars[f'doxtr_{level}_epigraph_{prop}'] = val
 
         # --- TEXT INHERITANCE LOGIC ---
-        if resolve_val('doxtr_inherit_all', 'inherit_all', True):
+        if g.get('inherit_all', True):
             # NOTE: epigraph and epigraph_author hierarchies are intentionally absent here.
             # The per-level epigraph loop above implements an inline cascade via indexed
             # fallback keys (global → part → chapter → section → …), so all per-level
@@ -632,7 +1902,7 @@ def config_inited(app, config):
             # Adding them here would be dead code: every slot is truthy, making the guard
             # `if not template_vars.get(key)` always False.
             for hierarchy in [['part', 'chapter', 'section', 'subsection', 'subsubsection'], ['part_number', 'chapter_number', 'section_number', 'subsection_number', 'subsubsection_number'], ['chapter_line', 'section_line', 'subsection_line', 'subsubsection_line']]:
-                for prop, is_enabled in [('font', resolve_val('doxtr_inherit_font', 'inherit_font', True)), ('color', resolve_val('doxtr_inherit_color', 'inherit_color', True)), ('size', resolve_val('doxtr_inherit_size', 'inherit_size', False))]:
+                for prop, is_enabled in [('font', g.get('inherit_font', True)), ('color', g.get('inherit_color', True)), ('size', g.get('inherit_size', False))]:
                     if is_enabled:
                         current_val = template_vars.get(f'doxtr_{hierarchy[0]}_{prop}', None)
                         for i in range(1, len(hierarchy)):
@@ -656,8 +1926,29 @@ def config_inited(app, config):
             if not template_vars.get(f'doxtr_part_number_part_{prop}'): template_vars[f'doxtr_part_number_part_{prop}'] = template_vars.get(f'doxtr_part_number_{prop}')
             if not template_vars.get(f'doxtr_part_number_number_{prop}'): template_vars[f'doxtr_part_number_number_{prop}'] = template_vars.get(f'doxtr_part_number_{prop}')
 
+        # -----------------------------------------------------------------------
+        # COLOR RESOLUTION — PASS 2
+        # Catches intra-section dd:this: cross-references where key iteration
+        # order left values unresolved in Pass 1 (e.g. dd:this:title_background_color
+        # iterated before title_background_color was resolved).
+        # NOTE: The TEXT INHERITANCE LOGIC above operates on template_vars (CMYK
+        # strings), not on merged_configs.  Pass 2 does not benefit from
+        # inheritance propagation; merged_configs is unchanged by that block.
+        # -----------------------------------------------------------------------
+        for section_name, section_dict in merged_configs.items():
+            resolve_all_colors(
+                section_dict, semantic_palette, page_bg, section_name,
+                theme_defaults, CORE_CONFIG_MANIFEST,
+                getattr(config, 'doxtr_' + section_name, {}),
+                root_config=merged_configs,
+                wcag_level=wcag_level, wcag_color_debug=wcag_color_debug,
+            )
+
         # --- ADMONITIONS ---
-        admon_types = ['generic', 'admonition', 'note', 'warning', 'hint', 'danger', 'error', 'caution', 'tip', 'important', 'attention', 'seealso']
+        admon_types = list(CORE_ADMONITION_TYPES)  # start from the canonical core list
+        for k in admonitions.keys():
+            if k.lower() not in admon_types:
+                admon_types.append(k.lower())
         template_vars['admon_types'] = admon_types
         admon_props = ['title_icon', 'title_icon_color', 'title_icon_size', 'title_icon_padding', 'title_decoration_spacing', 'title_font', 'title_font_color', 'title_font_size', 'title_background_color', 'title_icon_box_background_color', 'content_background_color', 'content_background_color_nested', 'content_font', 'content_font_color', 'content_font_size', 'before_skip', 'after_skip']
         
@@ -676,8 +1967,8 @@ def config_inited(app, config):
                 val = t_dict.get(p)
                 if val is None:
                     val = gen_dict.get(p)
-                if val is None:
-                    val = CORE_CONFIG_MANIFEST.get('admonitions', {}).get('generic', {}).get(p) if t != 'generic' else CORE_CONFIG_MANIFEST.get('admonitions', {}).get('generic', {}).get(p)
+                if val is None and t != 'generic':
+                    val = CORE_CONFIG_MANIFEST.get('admonitions', {}).get('generic', {}).get(p)
                 
                 # Check root user config override layer
                 if val is None:
@@ -821,6 +2112,19 @@ def config_inited(app, config):
             theme_style_paths, resolve_val, strict_mode, use_cache,
         )
 
+        # 4.5 Draft Watermark Resolution
+        # Rendered after all draft template_vars (doxtr_draft_text, doxtr_draft_color_cmyk,
+        # doxtr_draft_opacity, doxtr_draft_font, doxtr_draft_font_size) are set above.
+        # doxtr_rendered_draft is '' when no draft text is configured.
+        if template_vars.get('doxtr_draft_text'):
+            draft_style_name = draft.get('template', DEFAULT_STYLE_NAME)
+            template_vars['doxtr_rendered_draft'] = resolve_and_render_template(
+                app, env, template_vars, 'draft', draft_style_name,
+                theme_style_paths, resolve_val, strict_mode, use_cache,
+            )
+        else:
+            template_vars['doxtr_rendered_draft'] = ''
+
         # 5. Table Resolution
         t_style_name = t_conf.get('style', DEFAULT_STYLE_NAME)
         template_vars['doxtr_rendered_tables'] = resolve_and_render_template(
@@ -842,7 +2146,7 @@ def config_inited(app, config):
         )
 
         # 6. Code Resolution
-        code_conf = code_blocks
+        code_conf = code
         if 'generic' not in code_conf:
             code_conf['generic'] = CORE_CONFIG_MANIFEST.get('code', {}).get('generic', {})
 
@@ -871,6 +2175,11 @@ def config_inited(app, config):
                 conf['icon'] = f"\\includegraphics[height=1em, keepaspectratio]{{{os.path.basename(conf['icon'])}}}"
                 
             icon_color = conf.get('icon_color', gen.get('icon_color', '')) or conf.get('title_font_color', gen.get('title_font_color', '#FFFFFF'))
+            # WCAG contrast enforcement: ensure code icon is readable against
+            # title background. After dark inversion both colors may shift to
+            # similar luminance values, making the icon invisible.
+            _code_title_bg = conf.get('title_background_color', gen.get('title_background_color', '#183060'))
+            icon_color = get_highest_contrast_color(icon_color, _code_title_bg, target='foreground', wcag_level=wcag_level, color_debug=wcag_color_debug) or icon_color
             conf['icon_color_cmyk'] = safe_cmyk(icon_color)
             conf['icon_size'] = conf.get('icon_size', gen.get('icon_size', ''))
             conf['icon_position'] = conf.get('icon_position', gen.get('icon_position', 'after_mac_dots'))
@@ -884,9 +2193,13 @@ def config_inited(app, config):
 
         # 7. Sidebar Resolution
         s_conf = sidebar.copy()
-        s_conf['title_background_color_cmyk'] = safe_cmyk(s_conf.get('title_background_color') or '#184878')
-        s_conf['title_font_color_cmyk'] = safe_cmyk(s_conf.get('title_font_color') or '#FFFFFF')
-        s_conf['title_icon_color_cmyk'] = safe_cmyk(s_conf.get('title_icon_color') or '#78D8F0')
+        _s_title_bg = s_conf.get('title_background_color') or '#184878'
+        s_conf['title_background_color_cmyk'] = safe_cmyk(_s_title_bg)
+        # WCAG contrast enforcement: ensure sidebar title text and icon are
+        # readable against the title background. After dark inversion, both
+        # colors may shift to similar luminance, making text/icons invisible.
+        _wcag_enforce_title_colors(s_conf, _s_title_bg, wcag_level, wcag_color_debug,
+                                   icon_default='#78D8F0')
         s_conf['content_background_color_cmyk'] = safe_cmyk(s_conf.get('content_background_color') or '#F0F8FF')
         s_conf['content_font_color_cmyk'] = safe_cmyk(s_conf.get('content_font_color') or '#1A1A2E')
         s_conf['border_color_cmyk'] = safe_cmyk(s_conf.get('border_color') or '#184878')
@@ -935,6 +2248,108 @@ def config_inited(app, config):
             extra_ctx={'h_conf': h_conf},
         )
 
+        # 9. Topic Resolution
+        topic_conf = _process_box_section(topic, 'topic', page_bg, wcag_level, wcag_color_debug,
+                                          default_icon='')
+        topic_style_name = topic_conf.get('style', DEFAULT_STYLE_NAME)
+        template_vars['doxtr_rendered_topic'] = resolve_and_render_template(
+            app, env, template_vars, 'topic', topic_style_name,
+            theme_style_paths, resolve_val, strict_mode, use_cache,
+            extra_ctx={'tp_conf': topic_conf},
+        )
+
+        # 10. Contents Resolution
+        ct_conf = _process_box_section(contents, 'contents', page_bg, wcag_level, wcag_color_debug,
+                                       default_icon=r'\faIcon{list}')
+        ct_style_name = ct_conf.get('style', DEFAULT_STYLE_NAME)
+        template_vars['doxtr_rendered_contents'] = resolve_and_render_template(
+            app, env, template_vars, 'contents', ct_style_name,
+            theme_style_paths, resolve_val, strict_mode, use_cache,
+            extra_ctx={'ct_conf': ct_conf},
+        )
+
+        # --- CUSTOM STYLE TYPE REGISTRY ---
+        # Process all style types registered externally via register_style_type().
+        # Built-in types (sidebar, highlights, admonitions, etc.) keep their own
+        # processing blocks above.  This loop handles only externally-registered types.
+        # Option B (full migration of built-ins) is tracked as a follow-on refactor.
+        for _st in _custom_style_types:
+            _st_name = _st['name']
+            _st_preamble_var = _st['preamble_var']
+
+            # 1. Config merge: core (from factory) → theme → user
+            _st_core = _st['config_section_factory']() if _st['config_section_factory'] else {}
+            _st_theme = theme_defaults.get(_st_name, {})
+            _st_user  = getattr(config, f'doxtr_{_st_name}', {})
+            _st_conf  = deep_update(
+                deep_update(copy.deepcopy(_st_core), copy.deepcopy(_st_theme)),
+                copy.deepcopy(_st_user),
+            )
+
+            # 1b. Dark mode processing for custom style types.
+            # Without this, custom sections would keep their light-mode hex values
+            # when dark_mode is active, violating the extensibility contract.
+            if dark_mode:
+                _st_dark_overrides = config.doxtr_dark_overrides.get(_st_name, {})
+                _st_conf = _build_dark_section(
+                    _st_conf, _st_dark_overrides,
+                    getattr(config, 'doxtr_dark_mode_strategy_resolved', 'invert')
+                )
+
+            # 1c. Page adaptation for custom style types.
+            # Ensures registered custom element types participate in the same
+            # luminance-proportional remapping as built-in sections.
+            if adapt_to_page:
+                _st_conf = _adapt_colors_in_dict(
+                    _st_conf, designed_page, page_bg,
+                    compress_dark, compress_light)
+
+            # 2. Color resolution (dd: expressions, semantic palette)
+            # NOTE: dd:core: references are not available for custom types because
+            # CORE_CONFIG_MANIFEST only contains built-in sections.
+            resolve_all_colors(
+                _st_conf, semantic_palette, page_bg, _st_name,
+                theme_defaults, CORE_CONFIG_MANIFEST,
+                _st_user,
+                root_config=merged_configs,
+                wcag_level=wcag_level, wcag_color_debug=wcag_color_debug,
+            )
+
+            # 3. CMYK conversion for the declared color keys
+            for _ck in _st['color_keys']:
+                _raw = _st_conf.get(_ck)
+                if _raw:
+                    _st_conf[f'{_ck}_cmyk'] = safe_cmyk(_raw)
+
+            # 3b. WCAG enforcement for registered pairs
+            if _st.get('wcag_pairs'):
+                for fg_key, bg_key in _st['wcag_pairs']:
+                    fg_val = _st_conf.get(fg_key)
+                    bg_val = _st_conf.get(bg_key)
+                    if fg_val and bg_val:
+                        adjusted = get_highest_contrast_color(
+                            fg_val, bg_val, target='foreground',
+                            wcag_level=wcag_level, color_debug=wcag_color_debug)
+                        if adjusted:
+                            _st_conf[fg_key] = adjusted
+                            _st_conf[f'{fg_key}_cmyk'] = safe_cmyk(adjusted)
+
+            # 4. Template resolution and rendering
+            _st_style_name = _st_conf.get('style', DEFAULT_STYLE_NAME)
+            template_vars[_st_preamble_var] = resolve_and_render_template(
+                app, env, template_vars, _st_name, _st_style_name,
+                theme_style_paths, resolve_val, strict_mode, use_cache,
+                extra_ctx={f'{_st_name}_conf': _st_conf},
+            )
+
+        # --- TOC / BIBLIOGRAPHY / INDEX / GLOSSARY ---
+        # These sections are flat config dicts (no .tex_t rendering).
+        # The preamble template accesses individual keys directly.
+        template_vars['doxtr_toc'] = toc
+        template_vars['doxtr_bibliography'] = bibliography
+        template_vars['doxtr_index'] = index
+        template_vars['doxtr_glossary'] = glossary
+
         try:
             my_preamble = template.render(**template_vars)
         except Exception as e:
@@ -947,13 +2362,63 @@ def config_inited(app, config):
         logger.warning("[Doxtr Core] Could not find preamble.tex_t template.")
         my_preamble = ""
 
+
+    # Store results in context for Stage 3
+    ctx['template_vars'] = template_vars if preamble_path is not None else {}
+    ctx['my_preamble'] = my_preamble
+
+
+def _stage_assemble_output(app, config, ctx):
+    """Pipeline Stage 3: Font processing and final LaTeX element assembly.
+
+    Performs the following in order:
+    - Font package generation (main/sans/mono font declarations)
+    - Custom font registration pipeline (API -> auto-discover -> user config -> dedup -> inject)
+    - Default latex_elements setup (fncychap, papersize, pointsize, etc.)
+    - sphinxsetup defaults (margins, verbatim settings)
+    - Topic/Contents deprecation warnings
+    - Hyperlink color processing (RGB for hyperref)
+    - WCAG contrast enforcement for link colors
+    - List of Figures/Tables/Listings injection
+    - Final preamble injection into config.latex_elements['preamble']
+    - .sty file resolution (headings, page styles)
+
+    Args:
+        app: The Sphinx application object.
+        config: The Sphinx config object. Mutated: sets latex_elements,
+                latex_additional_files.
+        ctx: Pipeline context dict. Reads 'g', 'main_font_size_str',
+             'dark_mode', 'adapt_to_page', 'wcag_level', 'wcag_color_debug',
+             'page_bg', 'merged_configs', 'template_vars', 'my_preamble',
+             'theme_style_paths', 'pkg_dir'.
+
+    Side effects:
+        - Builds and injects config.latex_elements['fontpkg']
+        - Builds and injects config.latex_elements['preamble']
+        - Adds .sty files to config.latex_additional_files
+        - Sets _fonts_processed guard
+    """
+    # Unpack context
+    g = ctx['g']
+    main_font_size_str = ctx['main_font_size_str']
+    dark_mode = ctx['dark_mode']
+    adapt_to_page = ctx['adapt_to_page']
+    wcag_level = ctx['wcag_level']
+    wcag_color_debug = ctx['wcag_color_debug']
+    page_bg = ctx['page_bg']
+    merged_configs = ctx['merged_configs']
+    template_vars = ctx['template_vars']
+    my_preamble = ctx['my_preamble']
+    theme_style_paths = ctx['theme_style_paths']
+    pkg_dir = ctx['pkg_dir']
+
     # Generate font pkg
-    m_font = resolve_val('doxtr_main_font', 'main_font', 'Lato Light')
-    m_font_opt = resolve_val('doxtr_main_font_options', 'main_font_options', '')
-    s_font = resolve_val('doxtr_sans_font', 'sans_font', 'Exo 2')
-    s_font_opt = resolve_val('doxtr_sans_font_options', 'sans_font_options', '')
-    mo_font = resolve_val('doxtr_mono_font', 'mono_font', 'IosevkaTerm NF')
-    mo_font_opt = resolve_val('doxtr_mono_font_options', 'mono_font_options', '')
+    m_font = g.get('main_font', 'Spectral')
+    m_font_opt = g.get('main_font_options', '')
+    s_font = g.get('sans_font', 'Montserrat')
+    s_font_opt = g.get('sans_font_options', '')
+    mo_font = g.get('mono_font', 'FiraCode Nerd Font')
+    mo_font_opt = g.get('mono_font_options', '')
     
     # Build font option brackets — only emit [options] if non-empty
     s_font_opt_str = f"[{s_font_opt}]" if s_font_opt else ""
@@ -970,13 +2435,66 @@ def config_inited(app, config):
 \\setsansfont{{{s_font}}}{s_font_opt_str}
 \\setmonofont{{{mo_font}}}{mo_font_opt_str}
 """
-    config.latex_elements.setdefault('fontpkg', dynamic_fontpkg)
-    
+    # --- Custom Font Registration ---
+    # Processing order: API registrations → auto-discover → user config → dedup → inject
+
+    # 0. Clear working registry for idempotent builds (test suites, sphinx-autobuild).
+    #    _api_font_registrations survives — it holds theme-time register_font_family() calls.
+    _clear_font_registry()
+
+    # 1. Re-apply API registrations from theme setup() into the working list.
+    _registered_fonts.extend(copy.deepcopy(_api_font_registrations))
+
+    # 2. Auto-discover fonts from theme style paths.
+    #    Scans style_path/fonts/ and (if parent is a Python package) style_path/../fonts/.
+    _font_auto_discover = g.get('font_auto_discover', True)
+    if _font_auto_discover:
+        _theme_font_dirs: List[Path] = []
+        for _style_path in (getattr(config, 'doxtr_theme_style_paths', None) or []):
+            _sp = Path(_style_path)
+            # Direct: style_path/fonts/
+            _fdir = _sp / 'fonts'
+            if _fdir.is_dir():
+                _theme_font_dirs.append(_fdir)
+            # Sibling: parent/fonts/ — only if parent is a Python package (safety guard)
+            _parent = _sp.parent
+            if (_parent / '__init__.py').exists():
+                _parent_fdir = _parent / 'fonts'
+                if _parent_fdir.is_dir() and _parent_fdir not in _theme_font_dirs:
+                    _theme_font_dirs.append(_parent_fdir)
+        for _fdir in _theme_font_dirs:
+            _discoverer = _fonts_mod._font_discoverer_fn or auto_discover_fonts
+            _discoverer(_fdir)
+
+    # 3. Process user doxtr_fonts config (user wins over theme and auto-discover).
+    _user_fonts = getattr(config, 'doxtr_fonts', None) or {}
+    if _user_fonts:
+        process_user_font_config(_user_fonts, app.confdir)
+
+    # 4. Deduplicate: last entry per name wins (User > API > AutoDiscover).
+    _deduplicate_registry()
+
+    # 5. Validate registered fonts and 6. add files to latex_additional_files.
+    _all_registered = get_registered_fonts()
+    if _all_registered:
+        validate_font_files(_all_registered)
+        for _fpath in collect_font_files(_all_registered):
+            if _fpath not in config.latex_additional_files:
+                config.latex_additional_files.append(_fpath)
+
+    # 7-8. Generate \defaultfontfeatures+ blocks and inject into fontpkg.
+    #      inject_font_features() handles both the empty and non-empty cases and
+    #      respects any custom renderer registered via register_font_renderer().
+    inject_font_features(config.latex_elements, dynamic_fontpkg, _all_registered)
+
+    # 9. Set late-call guard so register_font_family() called after this point warns.
+    _set_fonts_processed()
+
     default_elements = {
         'fncychap': '',
         'tableofcontents': '\\tableofcontents',
         'papersize': 'a4paper',
-        'pointsize': '11pt',
+        'pointsize': main_font_size_str,
         'extraclassoptions': 'openright,twoside,parskip=half,numbers=noenddot',
     }
     for key, value in default_elements.items():
@@ -1001,6 +2519,67 @@ def config_inited(app, config):
         else:
             config.latex_elements['sphinxsetup'] = ', '.join(missing_setups)
 
+    # --- Topic/Contents styling is now handled by the template system ---
+    # (Previously injected div.topic_*/div.contents_* sphinxsetup keys for dark mode.
+    #  Removed in v1.0.39 — see doxtr_topic and doxtr_contents config sections.)
+
+    # --- Deprecation: div.topic_*/div.contents_* sphinxsetup keys ---
+    _user_sphinxsetup = getattr(config, 'latex_elements', {}).get('sphinxsetup', '')
+    if 'div.topic_' in _user_sphinxsetup or 'div.contents_' in _user_sphinxsetup:
+        logger.warning(
+            'doxtr-pdf-theme-core: div.topic_* and div.contents_* sphinxsetup keys '
+            'are deprecated. Topic/contents styling is now managed by doxtr_topic '
+            'and doxtr_contents config sections. These keys will be ignored. '
+            '(Removal in 2.0.0)'
+        )
+
+    # --- Hyperlink Colors ---
+    # Sphinx's InnerLinkColor/OuterLinkColor use the {rgb} color model (not CMYK)
+    # because they are passed to hyperref via \spx@DeclareColorOption.
+    links_conf = merged_configs.get('links', {})
+    # Store resolved links config back on config for extensibility (AST processors, child themes)
+    config._doxtr_resolved_links = links_conf
+    inner_color_hex = links_conf.get('inner_color', '')
+    outer_color_hex = links_conf.get('outer_color', '')
+
+    # Guard against unresolved dd: expressions (e.g. broken palette reference)
+    if inner_color_hex and str(inner_color_hex).startswith('dd:'):
+        logger.warning(f"[Doxtr Core] links.inner_color has unresolved expression '{inner_color_hex}'. Skipping.")
+        inner_color_hex = ''
+    if outer_color_hex and str(outer_color_hex).startswith('dd:'):
+        logger.warning(f"[Doxtr Core] links.outer_color has unresolved expression '{outer_color_hex}'. Skipping.")
+        outer_color_hex = ''
+
+    # --- WCAG contrast enforcement for link colors against page background ---
+    # In dark mode or when page adaptation is active, resolved link colors may
+    # not have sufficient contrast against the page background. Apply
+    # get_highest_contrast_color to ensure readability.
+    if (dark_mode or adapt_to_page) and inner_color_hex:
+        _adjusted = get_highest_contrast_color(
+            inner_color_hex, page_bg, target='foreground',
+            wcag_level=wcag_level, color_debug=wcag_color_debug)
+        inner_color_hex = _adjusted if _adjusted else inner_color_hex
+    if (dark_mode or adapt_to_page) and outer_color_hex:
+        _adjusted = get_highest_contrast_color(
+            outer_color_hex, page_bg, target='foreground',
+            wcag_level=wcag_level, color_debug=wcag_color_debug)
+        outer_color_hex = _adjusted if _adjusted else outer_color_hex
+
+    if inner_color_hex or outer_color_hex:
+        current_sphinxsetup = config.latex_elements.get('sphinxsetup', '')
+        link_setups = []
+        if inner_color_hex and 'InnerLinkColor' not in current_sphinxsetup:
+            _r, _g, _b = hex_to_rgb_floats(inner_color_hex)
+            link_setups.append(f'InnerLinkColor={{rgb}}{{{_r:.3f},{_g:.3f},{_b:.3f}}}')
+        if outer_color_hex and 'OuterLinkColor' not in current_sphinxsetup:
+            _r, _g, _b = hex_to_rgb_floats(outer_color_hex)
+            link_setups.append(f'OuterLinkColor={{rgb}}{{{_r:.3f},{_g:.3f},{_b:.3f}}}')
+        if link_setups:
+            if current_sphinxsetup:
+                config.latex_elements['sphinxsetup'] = current_sphinxsetup.rstrip(', ') + ', ' + ', '.join(link_setups)
+            else:
+                config.latex_elements['sphinxsetup'] = ', '.join(link_setups)
+
     # --- Inject Lists before Index ---
     orig_printindex = config.latex_elements.get('printindex', '\\printindex')
     lists_tex = ""
@@ -1023,6 +2602,16 @@ def config_inited(app, config):
     doxtr_rendered_code = template_vars.get('doxtr_rendered_code', '')
     doxtr_rendered_sidebar = template_vars.get('doxtr_rendered_sidebar', '')
     doxtr_rendered_highlights = template_vars.get('doxtr_rendered_highlights', '')
+    doxtr_rendered_topic = template_vars.get('doxtr_rendered_topic', '')
+    doxtr_rendered_contents = template_vars.get('doxtr_rendered_contents', '')
+
+    # Collect rendered LaTeX from all registered custom style types
+    _custom_preamble_parts = []
+    for _st in _custom_style_types:
+        _rendered = template_vars.get(_st['preamble_var'], '')
+        if _rendered:
+            _custom_preamble_parts.append(_rendered)
+    _custom_rendered = '\n'.join(_custom_preamble_parts)
     
     lol_tracker = r"""
 % --- DOXTR LIST OF LISTINGS TRACKER ---
@@ -1056,29 +2645,85 @@ def config_inited(app, config):
 \makeatother
 """
     
+    # Collect preamble hook contributions at each injection position
+    _hooks_before_pkg = '\n'.join(fn() for fn, pos in _preamble_hooks if pos == 'before_packages')
+    _hooks_after_pkg = '\n'.join(fn() for fn, pos in _preamble_hooks if pos == 'after_packages')
+    _hooks_before_styles = '\n'.join(fn() for fn, pos in _preamble_hooks if pos == 'before_styles')
+    _hooks_after_styles = '\n'.join(fn() for fn, pos in _preamble_hooks if pos == 'after_styles')
+
+    # Assemble the final preamble with hook injection points:
+    #   before_packages → my_preamble (core packages/structure) → after_packages
+    #   → before_styles → rendered style blocks → after_styles → lol_tracker
+    _styles_block = f"{doxtr_rendered_code}\n{doxtr_rendered_sidebar}\n{doxtr_rendered_highlights}\n{doxtr_rendered_topic}\n{doxtr_rendered_contents}\n{_custom_rendered}"
+    _assembled = f"{_hooks_before_pkg}\n{my_preamble}\n{_hooks_after_pkg}\n{_hooks_before_styles}\n{_styles_block}\n{_hooks_after_styles}\n{lol_tracker}"
+
     if 'preamble' in config.latex_elements: 
-        config.latex_elements['preamble'] += f"\n{my_preamble}\n{doxtr_rendered_code}\n{doxtr_rendered_sidebar}\n{doxtr_rendered_highlights}\n{lol_tracker}"
+        config.latex_elements['preamble'] += f"\n{_assembled}"
     else: 
-        config.latex_elements['preamble'] = f"{my_preamble}\n{doxtr_rendered_code}\n{doxtr_rendered_sidebar}\n{doxtr_rendered_highlights}\n{lol_tracker}"
+        config.latex_elements['preamble'] = _assembled
 
     if config.latex_logo and config.latex_logo not in config.latex_additional_files:
         config.latex_additional_files.append(config.latex_logo)
     
-    config.latex_additional_files.extend([
-        str(pkg_dir / "latex_styles" / "sphinxlatexstyleheadings.sty"),
-        str(pkg_dir / "latex_styles" / "sphinxlatexstylepage.sty")
-    ])
+    # Resolve .sty files — theme authors and users can override via doxtr_sty_override_paths.
+    # Relative paths in doxtr_sty_override_paths are resolved against confdir.
+    _raw_sty_override_paths = getattr(config, 'doxtr_sty_override_paths', []) or []
+    sty_override_paths = [
+        str(Path(app.confdir) / p) if not Path(p).is_absolute() else p
+        for p in _raw_sty_override_paths
+    ]
+    for _sty in ('sphinxlatexstyleheadings.sty', 'sphinxlatexstylepage.sty'):
+        resolved = _resolve_sty_file(_sty, sty_override_paths, pkg_dir)
+        if resolved not in config.latex_additional_files:
+            config.latex_additional_files.append(resolved)
+
+
+# --- Image processing (extracted to image_processing.py) ---
+from .image_processing import (
+    _resolve_dark_asset,
+    _ADAPT_IMAGE_WHITE_FUZZ_DEFAULT,
+    process_dark_images_ast,
+    _recolour_dark_images,
+    _adapt_image_backgrounds,
+    _process_image_adapt_ast,
+)
+
 
 def build_finished(app, exception):
+    """Write XMP metadata for the built PDF document.
+
+    Called on the Sphinx ``build-finished`` event.  When the build completes
+    without error and the active builder is LaTeX, this function writes a
+    ``.xmpdata`` file alongside the generated ``.tex`` output.  The file
+    contains ``\\Title`` and ``\\Author`` entries consumed by the
+    ``pdfx``/``hyperxmp`` LaTeX packages to embed XMP metadata in the
+    final PDF.
+
+    Args:
+        app: The Sphinx application object.
+        exception: If not None, the build raised an error and we skip
+                   metadata generation.
+    """
     if exception is not None or app.builder.name != 'latex': return
     xmp_content = f"\\Title{{{app.config.project}}}\n\\Author{{{app.config.author}}}\n"
     Path(app.builder.outdir).joinpath(f"{get_safe_filename(app.config.project)}.xmpdata").write_text(xmp_content, encoding='utf-8')
 
 def setup(app):
+    # Patch LaTeXTranslator to normalise admonition environment names.
+    # WHY: Sphinx emits ``\begin{note}`` for .. note:: directives but our
+    # tcolorbox-based style system defines a single ``admonition`` environment
+    # for all admonition types. Without this patch, LaTeX raises "undefined
+    # environment" errors for note/warning/etc. The patch is applied once
+    # (guarded by _doxtr_patched) and can be disabled via
+    # doxtr_patch_admonition_translator=False for themes that define per-type
+    # environments themselves.
     if not getattr(LaTeXTranslator, '_doxtr_patched', False):
         _orig_visit_admonition = LaTeXTranslator.visit_admonition
         def _custom_visit_admonition(self, node):
             _orig_visit_admonition(self, node)
+            # Check config flag at call time (config unavailable during setup())
+            if not getattr(self.config, 'doxtr_patch_admonition_translator', True):
+                return
             if self.body and '{note}' in self.body[-1]: self.body[-1] = self.body[-1].replace('{note}', '{admonition}')
         LaTeXTranslator.visit_admonition = _custom_visit_admonition
         LaTeXTranslator._doxtr_patched = True
@@ -1088,36 +2733,152 @@ def setup(app):
     # Core Foundation Layers
     app.add_config_value('doxtr_theme_defaults', {}, 'env')
     app.add_config_value('doxtr_theme_style_paths', [], 'env')
-    
+    # Override directories for .sty files — theme authors and users can supply replacement
+    # sphinxlatexstyleheadings.sty / sphinxlatexstylepage.sty by listing the containing
+    # directory here. Paths relative to confdir are resolved automatically.
+    app.add_config_value('doxtr_sty_override_paths', [], 'env')
+    # Override directory for preamble.tex_t — allows theme authors and users to replace
+    # the core LaTeX document structure without forking the core. Set this to a path
+    # (relative to confdir or srcdir) that contains a preamble.tex_t file.
+    # Themes can also place preamble/preamble.tex_t inside any doxtr_theme_style_paths entry.
+    app.add_config_value('doxtr_preamble_path', None, 'env')
+
     # Strict mode: raises ExtensionError on missing templates instead of using fallbacks
     app.add_config_value('doxtr_strict_mode', False, 'env')
     # Template cache: caches compiled Jinja2 templates to avoid redundant parsing
     app.add_config_value('doxtr_cache_templates', True, 'env')
     # Semantic color system palette
     app.add_config_value('doxtr_semantic_palette', {}, 'env')
+
+    # Deprecated compat: doxtr_page_background → doxtr_semantic_palette['page']
+    # Remove in v1.1.0
+    app.add_config_value('doxtr_page_background', None, 'env')
     
     # Automatically register ALL globals so Sphinx never throws "Unknown Config" warnings!
-    for key in DOXTR_GLOBALS.keys():
-        app.add_config_value(f'doxtr_{key}', None, 'env')
+    app.add_config_value('doxtr_globals', {}, 'env')
+    app.add_config_value('doxtr_dark_overrides', {}, 'env')
+    # Dark mode: activates the parallel dark config stack.
+    # Can be set at build time: sphinx-build -D doxtr_dark_mode=1 ...
+    app.add_config_value('doxtr_dark_mode', False, 'env')
+    # Dark mode body text color — derived from hex_dark_invert('#000000') by default.
+    # Users/themes can override to control dark-mode text appearance.
+    app.add_config_value('doxtr_dark_text_color', None, 'env')
+    # Dark mode color strategy: 'auto' (default), 'invert', or 'passthrough'.
+    # 'auto' detects page luminance and chooses 'invert' for dark pages (<0.35)
+    # or 'passthrough' for light pages (≥0.35). 'invert' forces hex_dark_invert
+    # on all colors (current behavior). 'passthrough' skips inversion entirely —
+    # only dd: expressions and dark_overrides provide differentiation, suitable
+    # for solarized/sepia/cream alternative themes with light backgrounds.
+    app.add_config_value('doxtr_dark_mode_strategy', 'auto', 'env')
+    # Resolved strategy (computed by config_inited from 'auto' detection or
+    # explicit user value). Registered so it survives Sphinx environment pickling
+    # across incremental builds. Read by build-finished hooks.
+    app.add_config_value('doxtr_dark_mode_strategy_resolved', 'invert', 'env')
+    # Dark palette computed by config_inited from the semantic palette and user overrides.
+    # Must be registered so Sphinx serialises it into the pickled environment; without
+    # registration it is lost on incremental rebuilds and _recolour_dark_images falls
+    # back silently to the hardcoded page default.
+    app.add_config_value('doxtr_dark_semantic_palette', {}, 'env')
+    # Both are True by default; only apply when doxtr_dark_mode is True.
+    # Set False to disable that processing path entirely.
+    app.add_config_value('doxtr_dark_recolor_grayscale', True, 'env')
+    app.add_config_value('doxtr_dark_invert_color_images', True, 'env')
+    # Brightness threshold for color image lightness inversion.
+    # Mean sRGB luminance (0.0–1.0). Color images above this threshold are
+    # considered too bright for the dark page background and have their
+    # lightness channel inverted. Default 0.65 catches white-background
+    # diagrams (PlantUML, flowcharts, charts) while leaving mid-tone and
+    # dark images untouched.
+    app.add_config_value('doxtr_dark_image_brightness_threshold', 0.65, 'env')
+    # Glob patterns matched against image filenames in outdir.
+    # Matching images are excluded from all image processing (dark mode AND
+    # page adaptation). Use for extension-generated images where :class: is
+    # unavailable (e.g. PlantUML: ['plantuml-*.png']).
+    app.add_config_value('doxtr_image_exclude_patterns', [], 'env')
+    # Deprecated alias — use doxtr_image_exclude_patterns instead. Remove in v1.1.0.
+    app.add_config_value('doxtr_dark_image_exclude_patterns', [], 'env')
+    # Page adaptation: automatically shift all theme colors to maintain their
+    # intended relationships when the page background differs from the theme's
+    # designed-for background. Uses luminance-proportional remapping with
+    # directional compression.
+    # Values: 'auto' (adapt when page differs by >0.05 luminance),
+    #          True (force adaptation), False (disable adaptation).
+    # In 'auto' mode, a proactive logger.info hint is emitted when the page
+    # differs significantly but adaptation is not active.
+    app.add_config_value('doxtr_adapt_colors_to_page', 'auto', 'env')
+    # Image background adaptation: replace white image backgrounds with the
+    # page background color when page adaptation is active. Uses flood-fill
+    # from image borders to detect background regions only.
+    # Only active when doxtr_adapt_colors_to_page is active AND page != #FFFFFF.
+    app.add_config_value('doxtr_adapt_image_backgrounds', True, 'env')
+    # White detection fuzz for image background adaptation (0–255).
+    # Pixels with all RGB channels >= (255 - fuzz) are considered "white".
+    # Default 5 catches anti-aliased edges and minor compression artifacts.
+    app.add_config_value('doxtr_adapt_image_white_fuzz', _ADAPT_IMAGE_WHITE_FUZZ_DEFAULT, 'env')
+    # Adaptation state dict set by config_inited — exposes active/designed_page/
+    # compress_dark/compress_light for child themes and image processing hooks.
+    app.add_config_value('doxtr_adaptation_state', {}, 'env')
+    # One-version compat: register all old flat keys so Sphinx doesn't throw
+    # "Unknown config value" for users/themes still using the old API.
+    # Remove in v1.1.0.
+    for _legacy_key in _LEGACY_GLOBAL_KEYS:
+        app.add_config_value(f'doxtr_{_legacy_key}', None, 'env')
         
     # Register the nested dictionary configurations
-    for conf_dict in ['title_page', 'headings', 'parts', 'epigraphs', 'draft', 'microtype', 'containers', 'tables', 'figures', 'code', 'admonitions', 'needs', 'sidebar', 'highlights', 'toc', 'bibliography', 'index', 'glossary']:
+    for conf_dict in ['title_page', 'headings', 'parts', 'epigraphs', 'draft', 'microtype', 'containers', 'tables', 'figures', 'code', 'admonitions', 'needs', 'sidebar', 'highlights', 'topic', 'contents', 'toc', 'bibliography', 'index', 'glossary', 'links']:
         app.add_config_value(f'doxtr_{conf_dict}', {}, 'env')
+
+    # Auto-register config values for style types already registered via
+    # register_style_type() at import time (i.e. before setup() is called).
+    # Theme authors who call register_style_type() inside their own setup()
+    # (which runs after core setup()) must also call
+    # app.add_config_value(f'doxtr_{name}', {}, 'env') themselves.
+    for _st in _custom_style_types:
+        _attr = f"doxtr_{_st['name']}"
+        try:
+            app.add_config_value(_attr, {}, 'env')
+        except Exception:
+            pass  # already registered (e.g. setup() called twice)
 
     # Container name mapping: maps RST class names to registered container styles.
     # Enables theme switching without changing source documents.
     # Example: doxtr_container_mapping = {"terminal": "lcars-terminal"}
     app.add_config_value('doxtr_container_mapping', {}, 'env')
 
+    # Font registration: users can declaratively register custom font families.
+    # See 'doxtr_fonts' in the configuration reference for the full schema.
+    app.add_config_value('doxtr_fonts', {}, 'env')
+
+    # LaTeXTranslator admonition patch: set False if your theme defines
+    # per-type LaTeX environments (note, warning, etc.) and does not need
+    # the normalisation to a single 'admonition' environment.
+    app.add_config_value('doxtr_patch_admonition_translator', True, 'env')
+
+    # Per-processor disable flags: set False to skip individual AST processors.
+    # Useful for debugging or when a theme provides its own AST handling.
+    app.add_config_value('doxtr_enable_container_processor', True, 'env')
+    app.add_config_value('doxtr_enable_table_processor', True, 'env')
+    app.add_config_value('doxtr_enable_codeblock_processor', True, 'env')
+    app.add_config_value('doxtr_enable_epigraph_processor', True, 'env')
+    app.add_config_value('doxtr_enable_sidebar_processor', True, 'env')
+    app.add_config_value('doxtr_enable_highlights_processor', True, 'env')
+    app.add_config_value('doxtr_enable_needs_processor', True, 'env')
+    app.add_config_value('doxtr_enable_topics_processor', True, 'env')
+
     app.connect('config-inited', config_inited, priority=900)
     app.connect('build-finished', build_finished)
+    app.connect('build-finished', _recolour_dark_images)
+    app.connect('build-finished', _adapt_image_backgrounds)
+    app.connect('doctree-resolved', process_dark_images_ast, priority=991)
+    app.connect('doctree-resolved', _process_image_adapt_ast, priority=990)
     app.connect('doctree-resolved', process_containers_ast, priority=998)
     app.connect('doctree-resolved', process_sidebar_ast, priority=994)
     app.connect('doctree-resolved', process_highlights_ast, priority=993)
-    app.connect('doctree-resolved', process_tables_ast, priority=996) 
+    app.connect('doctree-resolved', process_topics_ast, priority=990)
+    app.connect('doctree-resolved', process_tables_ast, priority=996)
     app.connect('doctree-resolved', process_codeblocks_ast, priority=995)
     app.connect('doctree-resolved', process_epigraph_ast, priority=997)
     app.connect('doctree-resolved', process_needs_ast, priority=999)
-    app.connect('doctree-resolved', _dispatch_custom_ast_processors, priority=992)
+    app.connect('builder-inited', _connect_deferred_custom_processors)  # priority=500 (default): fires after all extension setup() calls
     
     return {'version': __version__, 'parallel_read_safe': True, 'parallel_write_safe': False}

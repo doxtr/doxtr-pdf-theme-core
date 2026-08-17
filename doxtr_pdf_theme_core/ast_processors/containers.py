@@ -9,13 +9,13 @@ from sphinx.util import logging
 
 from ..latex_escape import esc_latex
 from ..core_config import VALID_RENDER_MODES, RenderMode, validate_render_mode
+from ..utils import _RE_SAFE_NAME
 
 __all__ = ['process_containers_ast', 'resolve_container_class']
 
 logger = logging.getLogger(__name__)
 
-# Precompiled regex for performance - strips non-alpha characters for LaTeX-safe names
-_RE_SAFE_NAME = re.compile(r'[^a-zA-Z]')
+# _RE_SAFE_NAME imported from utils.py (shared with __init__.py)
 
 
 def resolve_container_class(class_name: str, mapping: dict, containers_conf: dict) -> tuple:
@@ -84,11 +84,15 @@ def process_containers_ast(app, doctree, docname):
     (from doxtr_containers config) into LaTeX tcolorbox environments
     with appropriate styling.
 
+    Skipped if ``doxtr_enable_container_processor`` is False.
+
     Args:
         app: The Sphinx application object.
         doctree: The doctree to process.
         docname: The name of the document being processed.
     """
+    if not getattr(app.config, 'doxtr_enable_container_processor', True):
+        return
     if getattr(app.builder, 'format', '') != 'latex':
         return
     containers_conf = getattr(app.config, 'doxtr_containers', {})

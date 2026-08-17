@@ -6,13 +6,13 @@
 
 \usepackage{wrapfig}
 
-\definecolor{ddsidebartitlebg}{cmyk}{<< s_conf.title_background_color_cmyk >>}
-\definecolor{ddsidebartitlefg}{cmyk}{<< s_conf.title_font_color_cmyk >>}
-\definecolor{ddsidebariconfg}{cmyk}{<< s_conf.title_icon_color_cmyk >>}
-\definecolor{ddsidebarcontentbg}{cmyk}{<< s_conf.content_background_color_cmyk >>}
-\definecolor{ddsidebarcontentfg}{cmyk}{<< s_conf.content_font_color_cmyk >>}
-\definecolor{ddsidebarborder}{cmyk}{<< s_conf.border_color_cmyk >>}
-\definecolor{ddsidebarsubtitlefg}{cmyk}{<< s_conf.subtitle_font_color_cmyk >>}
+\definecolor{ddsidebartitlebg}{rgb}{<< s_conf.title_background_color_cmyk >>}
+\definecolor{ddsidebartitlefg}{rgb}{<< s_conf.title_font_color_cmyk >>}
+\definecolor{ddsidebariconfg}{rgb}{<< s_conf.title_icon_color_cmyk >>}
+\definecolor{ddsidebarcontentbg}{rgb}{<< s_conf.content_background_color_cmyk >>}
+\definecolor{ddsidebarcontentfg}{rgb}{<< s_conf.content_font_color_cmyk >>}
+\definecolor{ddsidebarborder}{rgb}{<< s_conf.border_color_cmyk >>}
+\definecolor{ddsidebarsubtitlefg}{rgb}{<< s_conf.subtitle_font_color_cmyk >>}
 
 \makeatletter
 %% Sidebar position and width commands (used by the AST-generated wrapfigure)

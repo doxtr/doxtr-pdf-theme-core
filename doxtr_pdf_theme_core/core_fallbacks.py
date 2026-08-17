@@ -22,11 +22,11 @@ DEFAULT_NEED_STYLE = r"""
 """
 
 DEFAULT_CONTAINER_STYLE = r"""
-\definecolor{ddconttitlefg<< c_name >>}{cmyk}{<< c_conf.title_color_cmyk >>}
-\definecolor{ddconttitletextfg<< c_name >>}{cmyk}{<< c_conf.title_font_color_cmyk >>}
-\definecolor{ddconticonfg<< c_name >>}{cmyk}{<< c_conf.title_icon_color_cmyk >>}
-\definecolor{ddcontcontentfg<< c_name >>}{cmyk}{<< c_conf.content_font_color_cmyk >>}
-\definecolor{ddcontcontentbg<< c_name >>}{cmyk}{<< c_conf.content_background_color_cmyk >>}
+\definecolor{ddconttitlefg<< c_name >>}{rgb}{<< c_conf.title_color_cmyk >>}
+\definecolor{ddconttitletextfg<< c_name >>}{rgb}{<< c_conf.title_font_color_cmyk >>}
+\definecolor{ddconticonfg<< c_name >>}{rgb}{<< c_conf.title_icon_color_cmyk >>}
+\definecolor{ddcontcontentfg<< c_name >>}{rgb}{<< c_conf.content_font_color_cmyk >>}
+\definecolor{ddcontcontentbg<< c_name >>}{rgb}{<< c_conf.content_background_color_cmyk >>}
 
 \expandafter\def\csname ddconticon<< c_name >>\endcsname{<% if c_conf.title_icon %>{<< c_conf.title_icon_font_size >>\color{ddconticonfg<< c_name >>}<< c_conf.title_icon >>}\hspace{0.5em}<% endif %>}
 
@@ -38,13 +38,13 @@ DEFAULT_CONTAINER_STYLE = r"""
 # --- ABSOLUTE FALLBACK FOR TABLES ---
 DEFAULT_TABLE_STYLE = r"""
 \usetikzlibrary{patterns, fadings}
-\definecolor{ddtableheaderbg}{cmyk}{<< t_conf.header_background_color_cmyk >>}
-\definecolor{ddtableheaderfg}{cmyk}{<< t_conf.header_font_color_cmyk >>}
-\definecolor{sphinxTableRowColorOdd}{cmyk}{<< t_conf.row_color_odd_cmyk >>}
-\definecolor{sphinxTableRowColorEven}{cmyk}{<< t_conf.row_color_even_cmyk >>}
-\definecolor{ddconttitlefgtable}{cmyk}{<< t_conf.title_background_color_cmyk >>}
-\definecolor{ddconttitletextfgtable}{cmyk}{<< t_conf.title_font_color_cmyk >>}
-\definecolor{ddtablefademask}{cmyk}{<< t_conf.title_background_fade_mask_color_cmyk >>}
+\definecolor{ddtableheaderbg}{rgb}{<< t_conf.header_background_color_cmyk >>}
+\definecolor{ddtableheaderfg}{rgb}{<< t_conf.header_font_color_cmyk >>}
+\definecolor{sphinxTableRowColorOdd}{rgb}{<< t_conf.row_color_odd_cmyk >>}
+\definecolor{sphinxTableRowColorEven}{rgb}{<< t_conf.row_color_even_cmyk >>}
+\definecolor{ddconttitlefgtable}{rgb}{<< t_conf.title_background_color_cmyk >>}
+\definecolor{ddconttitletextfgtable}{rgb}{<< t_conf.title_font_color_cmyk >>}
+\definecolor{ddtablefademask}{rgb}{<< t_conf.title_background_fade_mask_color_cmyk >>}
 \colorlet{sphinxTableRowColor}{white}\colorlet{sphinxTableBorderColor}{black!30}
 \renewcommand{\sphinxstyletheadfamily}{<% if t_conf.header_font %>\fontspec{<< t_conf.header_font >>}<% endif %><< t_conf.header_font_size >>\color{ddtableheaderfg}}
 \setlength{\aboverulesep}{0pt}\setlength{\belowrulesep}{0pt}\setlength{\extrarowheight}{0.75ex}\arrayrulecolor{black!30}\def\sphinxtoprule{\arrayrulecolor{ddconttitlefgtable}\toprule\arrayrulecolor{black!30}}\def\sphinxmidrule{\arrayrulecolor{ddtableheaderbg}\midrule\arrayrulecolor{black!30}}\def\sphinxbottomrule{\arrayrulecolor{ddconttitlefgtable}\bottomrule\arrayrulecolor{black!30}}
@@ -53,8 +53,8 @@ DEFAULT_TABLE_STYLE = r"""
 
 # --- ABSOLUTE FALLBACK FOR FIGURES ---
 DEFAULT_FIGURE_STYLE = r"""
-\definecolor{ddfigcaptionbg}{cmyk}{<< f_conf.caption_background_color_cmyk >>}
-\definecolor{ddfigcaptionfg}{cmyk}{<< f_conf.caption_font_color_cmyk >>}
+\definecolor{ddfigcaptionbg}{rgb}{<< f_conf.caption_background_color_cmyk >>}
+\definecolor{ddfigcaptionfg}{rgb}{<< f_conf.caption_font_color_cmyk >>}
 
 \makeatletter
 \long\def\dd@makecaption@figure#1#2{%
@@ -84,13 +84,13 @@ DEFAULT_FIGURE_STYLE = r"""
 DEFAULT_SIDEBAR_STYLE = r"""
 \usepackage{wrapfig}
 
-\definecolor{ddsidebartitlebg}{cmyk}{<< s_conf.title_background_color_cmyk >>}
-\definecolor{ddsidebartitlefg}{cmyk}{<< s_conf.title_font_color_cmyk >>}
-\definecolor{ddsidebariconfg}{cmyk}{<< s_conf.title_icon_color_cmyk >>}
-\definecolor{ddsidebarcontentbg}{cmyk}{<< s_conf.content_background_color_cmyk >>}
-\definecolor{ddsidebarcontentfg}{cmyk}{<< s_conf.content_font_color_cmyk >>}
-\definecolor{ddsidebarborder}{cmyk}{<< s_conf.border_color_cmyk >>}
-\definecolor{ddsidebarsubtitlefg}{cmyk}{<< s_conf.subtitle_font_color_cmyk >>}
+\definecolor{ddsidebartitlebg}{rgb}{<< s_conf.title_background_color_cmyk >>}
+\definecolor{ddsidebartitlefg}{rgb}{<< s_conf.title_font_color_cmyk >>}
+\definecolor{ddsidebariconfg}{rgb}{<< s_conf.title_icon_color_cmyk >>}
+\definecolor{ddsidebarcontentbg}{rgb}{<< s_conf.content_background_color_cmyk >>}
+\definecolor{ddsidebarcontentfg}{rgb}{<< s_conf.content_font_color_cmyk >>}
+\definecolor{ddsidebarborder}{rgb}{<< s_conf.border_color_cmyk >>}
+\definecolor{ddsidebarsubtitlefg}{rgb}{<< s_conf.subtitle_font_color_cmyk >>}
 
 \makeatletter
 \renewenvironment{sphinxsidebar}{%
@@ -126,10 +126,10 @@ DEFAULT_SIDEBAR_STYLE = r"""
 
 # --- ABSOLUTE FALLBACK FOR HIGHLIGHTS ---
 DEFAULT_HIGHLIGHTS_STYLE = r"""
-\definecolor{ddhighlightstitlefg}{cmyk}{0,0.24,0.86,0.45}
-\definecolor{ddhighlightscontentbg}{cmyk}{0,0.02,0.14,0}
-\definecolor{ddhighlightscontentfg}{cmyk}{0.0,0.0,0.0,0.82}
-\definecolor{ddhighlightsborder}{cmyk}{0,0.24,0.86,0.45}
+\definecolor{ddhighlightstitlefg}{rgb}{0,0.24,0.86,0.45}
+\definecolor{ddhighlightscontentbg}{rgb}{0,0.02,0.14,0}
+\definecolor{ddhighlightscontentfg}{rgb}{0.0,0.0,0.0,0.82}
+\definecolor{ddhighlightsborder}{rgb}{0,0.24,0.86,0.45}
 
 \newtcolorbox{ddhighlightsbox}{
     enhanced, breakable, parbox=false,
@@ -160,12 +160,12 @@ DEFAULT_CODE_STYLE = r"""
 \providecommand{\ddCurrentCodeLang}{generic}
 
 <% for lang, conf in doxtr_code.items() %>
-\definecolor{ddcodebg_<< lang >>}{cmyk}{<< conf.content_background_color_cmyk >>}
-\definecolor{ddcodefg_<< lang >>}{cmyk}{<< conf.content_font_color_cmyk >>}
-\definecolor{ddcodetitlebg_<< lang >>}{cmyk}{<< conf.title_background_color_cmyk >>}
-\definecolor{ddcodetitlefg_<< lang >>}{cmyk}{<< conf.title_font_color_cmyk >>}
-\definecolor{ddcodeborder_<< lang >>}{cmyk}{<< conf.border_color_cmyk >>}
-\definecolor{ddcodeicon_<< lang >>}{cmyk}{<< conf.icon_color_cmyk >>}
+\definecolor{ddcodebg_<< lang >>}{rgb}{<< conf.content_background_color_cmyk >>}
+\definecolor{ddcodefg_<< lang >>}{rgb}{<< conf.content_font_color_cmyk >>}
+\definecolor{ddcodetitlebg_<< lang >>}{rgb}{<< conf.title_background_color_cmyk >>}
+\definecolor{ddcodetitlefg_<< lang >>}{rgb}{<< conf.title_font_color_cmyk >>}
+\definecolor{ddcodeborder_<< lang >>}{rgb}{<< conf.border_color_cmyk >>}
+\definecolor{ddcodeicon_<< lang >>}{rgb}{<< conf.icon_color_cmyk >>}
 
 \expandafter\def\csname ddIconCommand<< lang >>\endcsname{<< conf.icon >>}
 
@@ -208,4 +208,28 @@ DEFAULT_CODE_STYLE = r"""
 }
 
 \makeatother
+"""
+
+# --- Topic Box Absolute Fallback ---
+# Minimal tcolorbox definition for topic boxes. Used only when a child theme
+# is broken or missing .tex_t files (tier-6 of template resolution).
+DEFAULT_TOPIC_STYLE = r"""
+\newtcolorbox{doxtrtopic}[1]{
+    enhanced, breakable, parbox=false, sharp corners, arc=0pt,
+    colback=white, colframe=black!20, coltext=black,
+    title={#1}, IfBlankTF={#1}{notitle}{},
+    before skip=1.5em, after skip=1.5em
+}
+"""
+
+# --- Contents Box Absolute Fallback ---
+# Minimal tcolorbox definition for contents boxes. Used only when a child theme
+# is broken or missing .tex_t files (tier-6 of template resolution).
+DEFAULT_CONTENTS_STYLE = r"""
+\newtcolorbox{doxtrcontents}[1]{
+    enhanced, breakable, parbox=false, sharp corners, arc=0pt,
+    colback=white, colframe=black!20, coltext=black,
+    title={#1}, IfBlankTF={#1}{notitle}{},
+    before skip=1.5em, after skip=1.5em
+}
 """

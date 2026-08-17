@@ -1,8 +1,8 @@
-\definecolor{ddconttitlefg<< c_name >>}{cmyk}{<< c_conf.title_color_cmyk >>}
-\definecolor{ddconttitletextfg<< c_name >>}{cmyk}{<< c_conf.title_font_color_cmyk >>}
-\definecolor{ddconticonfg<< c_name >>}{cmyk}{<< c_conf.title_icon_color_cmyk >>}
-\definecolor{ddcontcontentfg<< c_name >>}{cmyk}{<< c_conf.content_font_color_cmyk >>}
-\definecolor{ddcontcontentbg<< c_name >>}{cmyk}{<< c_conf.content_background_color_cmyk >>}
+\definecolor{ddconttitlefg<< c_name >>}{rgb}{<< c_conf.title_color_cmyk >>}
+\definecolor{ddconttitletextfg<< c_name >>}{rgb}{<< c_conf.title_font_color_cmyk >>}
+\definecolor{ddconticonfg<< c_name >>}{rgb}{<< c_conf.title_icon_color_cmyk >>}
+\definecolor{ddcontcontentfg<< c_name >>}{rgb}{<< c_conf.content_font_color_cmyk >>}
+\definecolor{ddcontcontentbg<< c_name >>}{rgb}{<< c_conf.content_background_color_cmyk >>}
 
 \expandafter\def\csname ddconticon<< c_name >>\endcsname{<% if c_conf.title_icon %>{<< c_conf.title_icon_font_size >>\color{ddconticonfg<< c_name >>}<< c_conf.title_icon >>}\hspace{0.5em}<% endif %>}
 

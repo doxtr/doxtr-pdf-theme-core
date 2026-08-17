@@ -66,6 +66,8 @@ my_company_theme/
         │   └── minimal.tex_t       # Custom container title geometry
         ├── code/
         │   └── default.tex_t       # Custom code block rendering
+        ├── draft/
+        │   └── default.tex_t       # Custom draft watermark rendering
         ├── figure/
         │   └── default.tex_t       # Custom figure captions
         ├── highlights/
@@ -124,7 +126,8 @@ def setup(app):
     # 1. Initialize the core engine first — this registers all config values
     core_setup(app)
 
-    # 2. Set 6 semantic colors — the entire document derives from these
+    # 2. Set semantic colors — the entire document derives from these
+    #    (The 7th key, 'page', defaults to '#FFFFFF' and rarely needs changing)
     app.config.doxtr_semantic_palette = {
         'primary':   '#1B4F72',   # Deep blue — headings, borders, table headers
         'secondary': '#F39C12',   # Gold — accents, highlights, decorative lines
@@ -250,6 +253,178 @@ def setup(app):
 3. Theme's `doxtr_theme_style_paths` list (searched in order)
 4. Core's `latex_styles/<type>/`
 5. Absolute fallback (hardcoded in `core_fallbacks.py`)
+
+### Bundling Custom Fonts with Your Theme
+
+By default, Sphinx uses whatever fonts are installed on the build system. If your theme ships its own font files (`.ttf` or `.otf`), the core's font registration facility handles everything — copying files to the LaTeX build directory and generating `\defaultfontfeatures+` blocks so `\fontspec{FamilyName}` resolves correctly.
+
+> **Optional dependency:** Auto-discovery (Mode 3 below) requires `fonttools>=4.0`. Explicit registration (Modes 1 and 2) works without it. Install with `pip install doxtr-pdf-theme-core[fonts]`.
+
+#### Mode 1 — Explicit filenames
+
+Call `register_font_family()` at module level (outside `setup()`). The registration happens at import time, before Sphinx fires any events.
+
+```python
+# my_theme/__init__.py
+from pathlib import Path
+from doxtr_pdf_theme_core import setup as core_setup, register_font_family
+
+_FONTS_DIR = Path(__file__).parent / 'fonts'
+
+register_font_family(
+    name='Corporate Sans',
+    fonts_dir=_FONTS_DIR,
+    upright='CorpSans-Regular.otf',
+    bold='CorpSans-Bold.otf',
+    italic='CorpSans-Italic.otf',
+    bold_italic='CorpSans-BoldItalic.otf',
+    options='Numbers=OldStyle',          # any fontspec feature string
+)
+
+def setup(app):
+    core_setup(app)
+    app.config.doxtr_main_font = 'Corporate Sans'
+    # No latex_additional_files manipulation, no config-inited hook needed.
+```
+
+The font files must live under `my_theme/fonts/` and be included in your package's `MANIFEST.in` / `pyproject.toml` package-data.
+
+#### Mode 2 — Weight-pattern batch registration
+
+For families with a consistent naming scheme, use `register_font_families()` with a `pattern` and a per-family `weights` map:
+
+```python
+from doxtr_pdf_theme_core import setup as core_setup, register_font_families
+
+_FONTS_DIR = Path(__file__).parent / 'fonts'
+
+# Single pattern — one template for all four faces
+register_font_families(
+    fonts_dir=_FONTS_DIR,
+    pattern='Raleway-{weight}.ttf',
+    families={
+        'Raleway Thin':     {'upright': 'Thin',     'bold': 'Regular',   'italic': 'ThinItalic',     'bold_italic': 'Italic'},
+        'Raleway Light':    {'upright': 'Light',    'bold': 'SemiBold',  'italic': 'LightItalic',    'bold_italic': 'SemiBoldItalic'},
+        'Raleway':          {'upright': 'Regular',  'bold': 'Bold',      'italic': 'Italic',         'bold_italic': 'BoldItalic'},
+        'Raleway SemiBold': {'upright': 'SemiBold', 'bold': 'ExtraBold', 'italic': 'SemiBoldItalic', 'bold_italic': 'ExtraBoldItalic'},
+    },
+)
+```
+
+For families where upright and italic files use different naming conventions, pass a `dict` as the pattern:
+
+```python
+# Dual pattern — upright/bold use one template, italic/bold-italic use another
+register_font_families(
+    fonts_dir=_FONTS_DIR,
+    pattern={
+        'upright': 'MyFont_{weight}_.ttf',   # trailing underscore on uprights
+        'italic':  'MyFont_{weight}.ttf',    # no trailing underscore on italics
+    },
+    families={
+        'MyFont Thin':  {'upright': '200', 'bold': '400', 'italic': '200i', 'bold_italic': '400i'},
+        'MyFont':       {'upright': '400', 'bold': '700', 'italic': '400i', 'bold_italic': '700i'},
+        'MyFont Bold':  {'upright': '700', 'bold': '900', 'italic': '700i', 'bold_italic': '900i'},
+    },
+)
+```
+
+For a batch of families with fully explicit filenames (no pattern), omit `pattern` or pass `pattern=None`:
+
+```python
+# Literal filenames batch mode
+register_font_families(
+    fonts_dir=_FONTS_DIR,
+    families={
+        'Raleway':       {'upright': 'Raleway-Regular.ttf',  'bold': 'Raleway-Bold.ttf',
+                          'italic':  'Raleway-Italic.ttf',   'bold_italic': 'Raleway-BoldItalic.ttf'},
+        'Raleway Light': {'upright': 'Raleway-Light.ttf',    'bold': 'Raleway-Regular.ttf',
+                          'italic':  'Raleway-LightItalic.ttf', 'bold_italic': 'Raleway-Italic.ttf'},
+    },
+)
+```
+
+#### Mode 3 — Zero-code auto-discovery
+
+Place font files in a `fonts/` directory alongside your `latex_styles/` directory. The core scans it automatically using `fonttools` to read family names, weight classes, and italic flags directly from the font metadata.
+
+```
+my_theme/
+├── __init__.py
+├── fonts/                ← auto-discovered (sibling to latex_styles)
+│   ├── Raleway-Regular.ttf
+│   ├── Raleway-Bold.ttf
+│   ├── Raleway-Italic.ttf
+│   └── Raleway-BoldItalic.ttf
+└── latex_styles/         ← registered in doxtr_theme_style_paths
+```
+
+```python
+# my_theme/__init__.py — zero font code needed
+from doxtr_pdf_theme_core import setup as core_setup
+
+def setup(app):
+    core_setup(app)
+    app.config.doxtr_theme_style_paths = [str(Path(__file__).parent / 'latex_styles')]
+    # Auto-discovery finds my_theme/fonts/ because the parent directory
+    # (my_theme/) contains __init__.py — confirming it is a Python package.
+    app.config.doxtr_main_font = 'Raleway'
+    app.config.doxtr_sans_font = 'Raleway Bold'
+```
+
+Auto-discovery groups files into sub-families based on `OS/2.usWeightClass`. Weight 400 registers as `FamilyName`, weight 300 as `FamilyName Light`, weight 700 as `FamilyName Bold`, and so on. Variable fonts (those with an `fvar` table) are registered as a single base family; a log message recommends using `register_font_family()` for full axis control.
+
+Disable auto-discovery for a theme:
+
+```python
+doxtr_globals = {'light': {'font_auto_discover': False}}
+```
+
+#### Advanced — replacing the LaTeX renderer
+
+Child themes that need a different LaTeX font registration syntax (e.g. `\newfontfamily` instead of `\defaultfontfeatures+`) can register a custom renderer:
+
+```python
+from doxtr_pdf_theme_core import register_font_renderer
+
+def my_renderer(registered):
+    """registered is the deduplicated list of font dicts."""
+    lines = []
+    for entry in registered:
+        macro = ''.join(w.capitalize() for w in entry['name'].split())
+        lines.append(
+            f"\\newfontfamily\\{macro}Font[Path=./,"
+            f" BoldFont={entry['bold']},"
+            f" ItalicFont={entry['italic']},"
+            f" BoldItalicFont={entry['bold_italic']}]"
+            f"{{{entry['upright']}}}"
+        )
+    return '\n'.join(lines)
+
+register_font_renderer(my_renderer)
+```
+
+To replace the discovery step with a manifest-based scanner:
+
+```python
+from doxtr_pdf_theme_core import register_font_discoverer
+from doxtr_pdf_theme_core.fonts import register_font_family
+import json
+
+def manifest_discoverer(fonts_dir):
+    manifest = fonts_dir / 'fonts.json'
+    if not manifest.exists():
+        return
+    for entry in json.loads(manifest.read_text()):
+        register_font_family(
+            name=entry['name'],
+            fonts_dir=fonts_dir,
+            upright=entry['regular'],
+            bold=entry.get('bold', entry['regular']),
+        )
+
+register_font_discoverer(manifest_discoverer)
+```
 
 ### Font Weight Mapping
 
@@ -398,16 +573,17 @@ Each layer only specifies the keys it wants to override. The `deep_update()` fun
 
 ### Semantic Color Palette
 
-Control the entire document's look by setting 6 palette colors:
+Control the entire document's look by setting 7 palette colors:
 
 ```python
 doxtr_semantic_palette = {
-    'primary':   '#2E3959',   # Structural — headings, borders
-    'secondary': '#A64985',   # Accents — highlights
-    'info':      '#9BE2F2',   # Info — notes, specs
-    'success':   '#66D98E',   # Positive — hints, tips
-    'warning':   '#EA9B62',   # Caution — warnings
-    'danger':    '#F2545B',   # Danger — errors
+    'primary':   '#183060',   # Deep navy — structural, headings, borders
+    'secondary': '#78D8F0',   # Bright cyan — accents, highlights, active states
+    'info':      '#60D8F0',   # Lighter cyan — info, notes, specs
+    'success':   '#66D98E',   # Fresh green — hints, tips, decisions
+    'warning':   '#F0A860',   # Warm amber — warnings, caution
+    'danger':    '#E05050',   # Clear red — danger, error, risk
+    'page':      '#FFFFFF',   # Page background for contrast calculations
 }
 ```
 
@@ -464,9 +640,32 @@ doxtr_mono_font = 'FiraCode Nerd Font'
 doxtr_mono_font_options = 'Scale=MatchLowercase'    # fontspec options for mono font
 ```
 
+These variables select fonts already installed on the build system. To bundle custom font files with your project or theme, use the `doxtr_fonts` config variable (end users) or `register_font_family()` / `register_font_families()` (theme authors). See [Bundling Custom Fonts with Your Theme](#bundling-custom-fonts-with-your-theme) and [`doxtr_fonts`](#doxtr_fonts) below.
+
 ### Sizes & Spacing
 
-Use Python raw strings for LaTeX commands:
+The base document font size is controlled by:
+
+```python
+doxtr_main_font_size = '11.5pt'  # Default; accepts '10pt', '11pt', '11.5pt', '12pt', etc.
+```
+
+Heading sizes can be defined in two ways:
+
+**1. Relative (recommended for themes)** — scales with `doxtr_main_font_size`:
+
+```python
+doxtr_headings = {
+    'chapter': {
+        'size_factor': 2.0,   # 2× base size (11.5pt × 2.0 = 23.0pt)
+    },
+    'section': {
+        'size_factor': 1.5,   # 1.5× base size (11.5pt × 1.5 = 17.2pt)
+    },
+}
+```
+
+**2. Absolute** — fixed LaTeX font command (use Python raw strings):
 
 ```python
 doxtr_headings = {
@@ -479,6 +678,137 @@ doxtr_headings = {
 The `\fontsize{}{}\selectfont` command takes:
 1. **Font size** (e.g., `32pt`) — character height
 2. **Baselineskip** (e.g., `36pt`) — line-to-line distance
+
+When using `size_factor`, the baselineskip is automatically calculated as `size × 1.2`.
+
+**Precedence:** If both `size` and `size_factor` are present in the merged config for a heading level, `size` wins (explicit user override takes precedence over computed value).
+
+### Building in Dark Mode
+
+Because the entire document derives from the semantic color palette, switching to dark mode only requires overriding `doxtr_semantic_palette` and `doxtr_page_background` at build time — no source document changes are needed.
+
+**Option 1 — Sphinx tags (recommended)**
+
+Add a conditional block to `conf.py` once, then pass `-t dark` on every dark-mode build:
+
+```python
+# conf.py
+if tags.has('dark'):
+    doxtr_semantic_palette = {
+        'primary':   '#E8E8E8',   # Light grey — headings, borders
+        'secondary': '#B388FF',   # Soft violet — accents, highlights
+        'info':      '#4FC3F7',   # Sky blue — info, notes
+        'success':   '#81C784',   # Muted green — hints, tips
+        'warning':   '#FFB74D',   # Warm amber — warnings
+        'danger':    '#EF5350',   # Red — errors, danger
+        'page':      '#1A1A2E',   # Dark page background
+    }
+    doxtr_page_background = '#1A1A2E'
+```
+
+```bash
+sphinx-build -b latex -t dark source/ build/latex_dark/
+cd build/latex_dark && latexmk -pdf -lualatex *.tex
+```
+
+**Option 2 — Environment variable**
+
+Read an environment variable in `conf.py`:
+
+```python
+# conf.py
+import os
+if os.environ.get('DOXTR_DARK_MODE'):
+    doxtr_semantic_palette = {
+        'primary':   '#E8E8E8',
+        'secondary': '#B388FF',
+        'info':      '#4FC3F7',
+        'success':   '#81C784',
+        'warning':   '#FFB74D',
+        'danger':    '#EF5350',
+        'page':      '#1A1A2E',
+    }
+    doxtr_page_background = '#1A1A2E'
+```
+
+```bash
+DOXTR_DARK_MODE=1 sphinx-build -b latex source/ build/latex_dark/
+cd build/latex_dark && latexmk -pdf -lualatex *.tex
+```
+
+On Windows:
+
+```bat
+set DOXTR_DARK_MODE=1
+sphinx-build -b latex source/ build\latex_dark\
+```
+
+**Option 3 — Separate config directory**
+
+No `conf.py` modifications needed. Create a `dark/conf.py` that imports your existing config and overrides the colors:
+
+```python
+# dark/conf.py
+import os, sys
+
+_here = os.path.dirname(os.path.abspath(__file__))
+exec(open(os.path.join(_here, '..', 'conf.py')).read())
+
+doxtr_semantic_palette = {
+    'primary':   '#E8E8E8',
+    'secondary': '#B388FF',
+    'info':      '#4FC3F7',
+    'success':   '#81C784',
+    'warning':   '#FFB74D',
+    'danger':    '#EF5350',
+    'page':      '#1A1A2E',
+}
+doxtr_page_background = '#1A1A2E'
+```
+
+Point Sphinx at the override directory with `-c`:
+
+```bash
+sphinx-build -b latex -c dark/ source/ build/latex_dark/
+cd build/latex_dark && latexmk -pdf -lualatex *.tex
+```
+
+This approach keeps `conf.py` untouched and is useful in CI pipelines where you want a strict separation between light and dark builds.
+
+---
+
+### Page Color Adaptation
+
+When the page background differs from the theme's designed-for background (typically `#FFFFFF`), the core automatically adapts all theme colors to maintain their intended visual relationships. This includes image backgrounds.
+
+```python
+# conf.py — warm cream page
+doxtr_semantic_palette = {'page': '#FCF6E5'}
+```
+
+With just that one change:
+- All theme colors shift proportionally to maintain contrast and visual hierarchy
+- White image backgrounds (PlantUML, flowcharts, diagrams) are replaced with the page color
+- Images with transparent backgrounds are left untouched
+
+**Image background detection** uses flood-fill from image borders — only edge-connected white regions are replaced. Interior white areas (text on colored bars, enclosed pockets between crossing lines) are preserved.
+
+Per-image opt-out:
+
+```rst
+.. image:: my-special-diagram.png
+   :class: no-auto-image-adapt
+```
+
+Configuration:
+
+```python
+# conf.py
+doxtr_adapt_colors_to_page = 'auto'       # 'auto', True, or False
+doxtr_adapt_image_backgrounds = True       # Toggle image adaptation separately
+doxtr_adapt_image_white_fuzz = 5           # Channel tolerance (0–255)
+doxtr_image_exclude_patterns = ['logo-*.png']  # Skip specific images
+```
 
 ---
 
@@ -508,17 +838,19 @@ Each section can be set via `doxtr_theme_defaults` (in a theme) or directly in `
 | `bibliography` | `doxtr_bibliography` | Bibliography/citation entry styling |
 | `index` | `doxtr_index` | Back-of-book index styling |
 | `glossary` | `doxtr_glossary` | Glossary term/definition styling |
+| `links` | `doxtr_links` | Hyperlink colors (internal/external) |
 
 ### Global Variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `doxtr_main_font` | `'Spectral'` | Body text font |
-| `doxtr_main_font_options` | `''` | fontspec options for main font weight mapping |
+| `doxtr_main_font_options` | *(Spectral weight mapping)* | fontspec options for main font weight mapping |
 | `doxtr_sans_font` | `'Montserrat'` | Sans-serif font |
 | `doxtr_sans_font_options` | `''` | fontspec options for sans font (e.g. `Scale=MatchLowercase`) |
 | `doxtr_mono_font` | `'FiraCode Nerd Font'` | Monospace font |
 | `doxtr_mono_font_options` | `'Scale=MatchLowercase'` | fontspec options for mono font |
+| `doxtr_main_font_size` | `'11.5pt'` | Base body text font size. Used as LaTeX document class pointsize and as reference for heading `size_factor` calculations |
 | `doxtr_semantic_palette` | *(6 colors)* | Semantic color palette |
 | `doxtr_page_background` | `'#FFFFFF'` | Page background used in contrast calculations |
 | `doxtr_wcag_level` | `7` | Minimum contrast ratio for `contrast:` ops (4.5=AA, 7=AAA) |
@@ -528,9 +860,9 @@ Each section can be set via `doxtr_theme_defaults` (in a theme) or directly in `
 | `doxtr_inherit_color` | `True` | Inherit colors down the heading hierarchy |
 | `doxtr_inherit_size` | `False` | Inherit sizes down the heading hierarchy |
 | `doxtr_show_release` | `True` | Show release version on the title page |
-| `doxtr_show_list_of_figures` | `True` | Print List of Figures before Index |
-| `doxtr_show_list_of_tables` | `True` | Print List of Tables before Index |
-| `doxtr_show_list_of_listings` | `True` | Print List of Code Blocks before Index |
+| `doxtr_show_list_of_figures` | `False` | Print List of Figures before Index |
+| `doxtr_show_list_of_tables` | `False` | Print List of Tables before Index |
+| `doxtr_show_list_of_listings` | `False` | Print List of Code Blocks before Index |
 | `doxtr_appendix_chapter_numbering` | `True` | Number appendix chapters as A.1, A.2, etc. |
 | `doxtr_headsep` | `'8mm'` | Space between header and text body |
 | `doxtr_footskip` | `'10mm'` | Space between text body and footer |
@@ -541,6 +873,52 @@ Each section can be set via `doxtr_theme_defaults` (in a theme) or directly in `
 | `doxtr_landscape_package` | `'pdflscape'` | Package for landscape pages: `'pdflscape'`, `'lscape'`, or `''` to disable |
 | `doxtr_strict_mode` | `False` | Raise an error on missing templates instead of falling back |
 | `doxtr_cache_templates` | `True` | Cache compiled Jinja2 templates across pages |
+| `doxtr_adapt_colors_to_page` | `'auto'` | Page color adaptation: `'auto'` (adapt when page differs by >0.05 luminance), `True` (force), `False` (disable) |
+| `doxtr_adapt_image_backgrounds` | `True` | Replace white image backgrounds with page color when adaptation is active |
+| `doxtr_adapt_image_white_fuzz` | `5` | Channel tolerance (0–255) for white detection in image background adaptation |
+| `doxtr_image_exclude_patterns` | `[]` | Glob patterns to exclude images from all processing (dark mode AND page adaptation) |
+| `doxtr_fonts` | `{}` | Declarative font registration for end users — see [`doxtr_fonts`](#doxtr_fonts) |
+| `doxtr_globals['light']['font_auto_discover']` | `True` | Scan theme `fonts/` directories and register families from metadata (requires `fonttools`) |
+
+### `doxtr_fonts`
+
+End users can bundle and register custom fonts declaratively in `conf.py` without writing Python code. The core copies the files to the LaTeX build directory and generates the necessary `\defaultfontfeatures+` blocks automatically.
+
+```python
+# conf.py
+doxtr_fonts = {
+    # Explicit filenames — four faces named directly
+    'Corporate Sans': {
+        'dir': '_fonts',                        # relative to conf.py directory
+        'upright':    'CorpSans-Regular.otf',
+        'bold':       'CorpSans-Bold.otf',
+        'italic':     'CorpSans-Italic.otf',
+        'bold_italic':'CorpSans-BoldItalic.otf',
+        'options':    'Scale=MatchLowercase',    # any fontspec feature string
+    },
+    # Pattern mode — weight identifiers expanded into filenames
+    'Corporate Sans Light': {
+        'dir':     '_fonts',
+        'pattern': 'CorpSans_{weight}.otf',
+        'weights': {
+            'upright':    '300',
+            'bold':       '600',
+            'italic':     '300i',
+            'bold_italic':'600i',
+        },
+    },
+}
+
+# Then reference the registered families in your config:
+doxtr_main_font = 'Corporate Sans'
+doxtr_sans_font = 'Corporate Sans Light'
+```
+
+**`dir`** is resolved relative to `confdir` (the directory containing `conf.py`) when not absolute. If only `upright` is provided, the other three faces default to it. User-registered fonts override any same-name registrations from the active theme.
+
+Valid keys per entry: `dir`, `upright`, `bold`, `italic`, `bold_italic`, `options`, `pattern`, `weights`. Unknown keys produce a warning.
+
+---
 
 ### Custom Resolution Paths (for Theme Authors)
 
@@ -549,6 +927,8 @@ Each section can be set via `doxtr_theme_defaults` (in a theme) or directly in `
 | Variable | Type | Purpose |
 |---|---|---|
 | `doxtr_theme_style_paths` | list | Ordered list of directories to search for any `.tex_t` file |
+| `doxtr_preamble_path` | string | Override directory containing `preamble.tex_t` (replaces core LaTeX structure) |
+| `doxtr_sty_override_paths` | list | Override directories for `.sty` files (e.g. `sphinxlatexstyleheadings.sty`) |
 | `doxtr_container_title_style_path` | string | Container title `.tex_t` files |
 | `doxtr_container_style_path` | string | Container body `.tex_t` files |
 | `doxtr_table_style_path` | string | Table `.tex_t` files |
@@ -557,6 +937,8 @@ Each section can be set via `doxtr_theme_defaults` (in a theme) or directly in `
 | `doxtr_admonition_style_path` | string | Admonition `.tex_t` files |
 | `doxtr_need_style_path` | string | sphinx-needs `.tex_t` files |
 | `doxtr_sidebar_style_path` | string | Sidebar `.tex_t` files |
+| `doxtr_topic_style_path` | string | Topic `.tex_t` files |
+| `doxtr_contents_style_path` | string | Contents `.tex_t` files |
 | `doxtr_title_page_template_path` | string | Title page `.tex_t` files |
 
 ---
@@ -606,6 +988,8 @@ doxtr_headings = {
     'align': 'alternate',           # 'alternate', 'left', 'right', 'center'
     'numbers_in_margin': True,      # Push numbers into the page margin
     'margin_space': '0em',          # Gap between number and title text
+    'number_sep': r'\marginparsep', # Space between text block edge and number in margin
+    'number_match_title_xheight': True,  # Scale number cap height to match title x-height
 
     # Per-level overrides — all keys below are accepted by every level:
     'part': {
@@ -626,7 +1010,7 @@ doxtr_headings = {
     },
     'chapter': {
         'font': 'Story Script',
-        'size': r'\fontsize{26pt}{32pt}\selectfont',
+        'size_factor': 2.0,          # 2× doxtr_main_font_size (or use absolute 'size' instead)
         'color': '#183060',
         'number_margin': True,       # Push chapter number into margin
         'number_line': True,
@@ -747,7 +1131,7 @@ doxtr_microtype = {
 
 All admonition types inherit from `'generic'`. Override only the keys you want to change for a specific type.
 
-**Built-in types:** `generic`, `note`, `tip`, `hint`, `important`, `warning`, `caution`, `danger`, `error`, `attention`, `seealso`
+**Built-in types:** `generic`, `admonition`, `note`, `tip`, `hint`, `important`, `warning`, `caution`, `danger`, `error`, `attention`, `seealso`
 
 ```python
 doxtr_admonitions = {
@@ -975,6 +1359,7 @@ doxtr_containers = {
     'my_container': {
         'style': 'default',              # Body .tex_t template name
         'title_style': 'classic',        # Title geometry .tex_t template name
+        'render_mode': 'tcolorbox',      # 'tcolorbox' (title via option) or 'environment' (full control)
         'title': '',                     # Static title shown when no :title: in RST (empty = no title)
         'title_raw': False,              # Pass title as raw LaTeX without escaping
         'container_frame': True,         # Draw an outer border
@@ -1207,12 +1592,32 @@ doxtr_glossary = {
 }
 ```
 
+### `doxtr_links`
+
+Controls hyperlink colors in the PDF output. These are injected into Sphinx's `sphinxsetup` as `InnerLinkColor` and `OuterLinkColor` (using the `{rgb}` color model required by hyperref).
+
+```python
+doxtr_links = {
+    'inner_color': 'dd:info:darken:40',    # Internal cross-references (linkcolor, citecolor)
+    'outer_color': 'dd:warning:darken:40', # External URLs (urlcolor, filecolor, menucolor)
+}
+```
+
+Colors accept any `dd:` expression or static hex value. To disable automatic link coloring entirely, set both to empty strings:
+
+```python
+doxtr_links = {
+    'inner_color': '',
+    'outer_color': '',
+}
+```
+
+If you set `InnerLinkColor` or `OuterLinkColor` directly in `latex_elements['sphinxsetup']`, the doxtr system will not overwrite your explicit values.
+
 ---
 
-## Building for Release
-
 ```bash
-export VERSION=v0.1.10 && git tag $VERSION && git push origin $VERSION
+export VERSION=v1.0.42 && git tag $VERSION && git push origin $VERSION
 ```
 
 GitHub Actions will publish to PyPI automatically on release.

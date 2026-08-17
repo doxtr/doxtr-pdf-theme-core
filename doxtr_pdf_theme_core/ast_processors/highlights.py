@@ -18,11 +18,15 @@ def process_highlights_ast(app, doctree, docname):
     tcolorbox environment (ddhighlightsbox) that can be fully styled
     via .tex_t templates and configuration.
 
+    Skipped if ``doxtr_enable_highlights_processor`` is False.
+
     Args:
         app: The Sphinx application object.
         doctree: The doctree to process.
         docname: The name of the document being processed.
     """
+    if not getattr(app.config, 'doxtr_enable_highlights_processor', True):
+        return
     if getattr(app.builder, 'format', '') != 'latex':
         return
 

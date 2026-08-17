@@ -109,11 +109,15 @@ def process_sidebar_ast(app, doctree, docname):
     Uses Sphinx's LaTeX translator to properly render inline markup in the
     sidebar body and following paragraphs, preserving bold, code, links, etc.
 
+    Skipped if ``doxtr_enable_sidebar_processor`` is False.
+
     Args:
         app: The Sphinx application object.
         doctree: The doctree to process.
         docname: The name of the document being processed.
     """
+    if not getattr(app.config, 'doxtr_enable_sidebar_processor', True):
+        return
     if getattr(app.builder, 'format', '') != 'latex':
         return
 

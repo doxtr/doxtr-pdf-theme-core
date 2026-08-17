@@ -24,9 +24,15 @@ classifiers = [
 "Homepage" = "https://github.com/doxtr/doxtr-pdf-theme-core"
 
 [project.optional-dependencies]
+fonts = ["fonttools>=4.0"]
+images = ["numpy>=1.20", "scipy>=1.7", "Pillow>=9.0"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "fonttools>=4.0",
+    "numpy>=1.20",
+    "scipy>=1.7",
+    "Pillow>=9.0",
 ]
 
 [tool.setuptools.packages.find]

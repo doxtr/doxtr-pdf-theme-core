@@ -14,11 +14,15 @@ def process_tables_ast(app, doctree, docname):
     Adds \\rowcolor commands to table header rows for consistent
     styling across the document.
 
+    Skipped if ``doxtr_enable_table_processor`` is False.
+
     Args:
         app: The Sphinx application object.
         doctree: The doctree to process.
         docname: The name of the document being processed.
     """
+    if not getattr(app.config, 'doxtr_enable_table_processor', True):
+        return
     if getattr(app.builder, 'format', '') != 'latex':
         return
     
