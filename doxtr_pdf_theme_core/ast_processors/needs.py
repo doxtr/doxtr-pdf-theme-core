@@ -62,7 +62,7 @@ def process_needs_ast(app, doctree, docname):
         need_type = 'generic'
         for c in node.get('classes', []):
             if c.startswith('needs_type_'):
-                need_type = c.replace('needs_type_', '').lower()
+                need_type = c[len('needs_type_'):].lower()
                 break
 
         # Get title from needs environment if available
@@ -109,7 +109,7 @@ def process_needs_ast(app, doctree, docname):
                             wrapper.append(p)
                 
                 if content_row:
-                    wrapper.append(nodes.raw('', '\n\\tcblower\n', format='latex'))
+                    wrapper.append(nodes.raw('', '\n\\doxtrneedcontentsep\n', format='latex'))
                     for entry in content_row.traverse(nodes.entry):
                         wrapper.extend(entry.children)
 

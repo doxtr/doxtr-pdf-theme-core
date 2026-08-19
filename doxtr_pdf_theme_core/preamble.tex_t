@@ -2,6 +2,267 @@
 \usepackage{pdflscape}
 
 %% ----------------------------------------------------
+%% AUTO-LANDSCAPE ENVIRONMENT (legacy, width-based)
+%% Typesets content in a savebox, measures its natural width,
+%% and conditionally switches to landscape if > \linewidth.
+%% Used by the doxtr-landscape AST processor for auto-detection.
+%% Forced landscape uses pdflscape's \begin{landscape} directly.
+%% NOTE: This does NOT work for Sphinx tables that use relative
+%% \X{a}{b} column widths, since they always fill \linewidth.
+%% For those, use doxtradaptivelandscape instead.
+%% ----------------------------------------------------
+\makeatletter
+\newsavebox{\doxtr@landscapebox}
+\newenvironment{doxtrautolandscape}{%
+  \begin{lrbox}{\doxtr@landscapebox}\begin{minipage}{\linewidth}%
+}{%
+  \end{minipage}\end{lrbox}%
+  \ifdim\wd\doxtr@landscapebox>\linewidth
+    \begin{landscape}%
+    \centering\usebox{\doxtr@landscapebox}%
+    \end{landscape}%
+  \else
+    \noindent\usebox{\doxtr@landscapebox}%
+  \fi
+}
+\makeatother
+
+%% ----------------------------------------------------
+%% ADAPTIVE LANDSCAPE ENVIRONMENT
+%% Automatically selects the smallest A-series page size
+%% (A4L, A3L, A2L, A1L, A0L, 2A0L, 4A0L, and beyond) that
+%% can hold the content with readable column widths.
+%%
+%% Strategy: compute the required width from column count and a
+%% minimum per-column width (doxtr@mincolwidth, default 22mm).
+%% Then select the smallest A-series landscape page that provides
+%% enough textwidth.  Uses \pdfpagewidth/\pdfpageheight for the
+%% physical page and LaTeX environment grouping (\begin/\end)
+%% for scoping text dimension changes.  Content is NOT placed in a savebox, so
+%% tables that exceed the page height can break across pages.
+%%
+%% A-series landscape dimensions (width x height):
+%%   A4L:  297mm x  210mm  (textwidth ~  267mm with 15mm margins)
+%%   A3L:  420mm x  297mm  (textwidth ~  390mm)
+%%   A2L:  594mm x  420mm  (textwidth ~  564mm)
+%%   A1L:  841mm x  594mm  (textwidth ~  811mm)
+%%   A0L: 1189mm x  841mm  (textwidth ~ 1159mm)
+%%  2A0L: 1682mm x 1189mm  (textwidth ~ 1652mm)
+%%  4A0L: 2378mm x 1682mm  (textwidth ~ 2348mm)
+%%
+%% Beyond 4A0 the algorithm doubles the shorter dimension to
+%% produce arbitrarily large pages (8A0, 16A0, 32A0, ...).
+%% ----------------------------------------------------
+\makeatletter
+%% Engine check: \pdfpagewidth is pdfTeX/LuaTeX only.
+\@ifundefined{pdfpagewidth}{%
+  \PackageError{doxtr-pdf-theme-core}{%
+    The adaptive landscape feature requires pdfTeX or LuaTeX.\MessageBreak
+    XeTeX is not supported (use \string\pagewidth\space instead)}{%
+    Compile with lualatex or pdflatex.}%
+}{}
+\newlength{\doxtr@mincolwidth}
+%% Minimum per-column width for page-size selection.  22mm accommodates
+%% short labels, 3-digit numbers, and typical column headers without
+%% overflow.  Adjust in child themes via \setlength{\doxtr@mincolwidth}{...}.
+\setlength{\doxtr@mincolwidth}{22mm}
+\newlength{\doxtr@requiredwidth}
+\newlength{\doxtr@selectedpagewidth}
+\newlength{\doxtr@selectedpageheight}
+\newlength{\doxtr@selectedtextwidth}
+\newlength{\doxtr@marginsize}
+\setlength{\doxtr@marginsize}{15mm}
+\newcounter{doxtr@colcount}
+\newlength{\doxtr@savedpagewidth}
+\newlength{\doxtr@savedpageheight}
+%% Temporary lengths for the doubling loop
+%% NOTE: Requires pdfTeX or LuaTeX (\pdfpagewidth primitive).
+%%       Not compatible with XeTeX (which uses \pagewidth instead).
+\newlength{\doxtr@tmpW}
+\newlength{\doxtr@tmpH}
+
+\newcommand{\doxtr@selectpagesize}{%
+  %% Guard: ensure mincolwidth is positive to prevent infinite loops.
+  %% Falls back to the same default as line 57 (\setlength{\doxtr@mincolwidth}{22mm}).
+  \ifdim\doxtr@mincolwidth<1pt\relax
+    \setlength{\doxtr@mincolwidth}{22mm}%
+  \fi
+  %% Compute required text width from column count
+  \setlength{\doxtr@requiredwidth}{\value{doxtr@colcount}\doxtr@mincolwidth}%
+  %% Default: A4 landscape
+  \setlength{\doxtr@selectedpagewidth}{297mm}%
+  \setlength{\doxtr@selectedpageheight}{210mm}%
+  \setlength{\doxtr@selectedtextwidth}{\dimexpr 297mm-2\doxtr@marginsize\relax}%
+  %% Step up through fixed A-series sizes.
+  %% Textwidth is always pagewidth - 2*margin (single source of truth).
+  \ifdim\doxtr@requiredwidth>\doxtr@selectedtextwidth\relax
+    %% A3 landscape
+    \setlength{\doxtr@selectedpagewidth}{420mm}%
+    \setlength{\doxtr@selectedpageheight}{297mm}%
+    \setlength{\doxtr@selectedtextwidth}{\dimexpr 420mm-2\doxtr@marginsize\relax}%
+  \fi
+  \ifdim\doxtr@requiredwidth>\doxtr@selectedtextwidth\relax
+    %% A2 landscape
+    \setlength{\doxtr@selectedpagewidth}{594mm}%
+    \setlength{\doxtr@selectedpageheight}{420mm}%
+    \setlength{\doxtr@selectedtextwidth}{\dimexpr 594mm-2\doxtr@marginsize\relax}%
+  \fi
+  \ifdim\doxtr@requiredwidth>\doxtr@selectedtextwidth\relax
+    %% A1 landscape
+    \setlength{\doxtr@selectedpagewidth}{841mm}%
+    \setlength{\doxtr@selectedpageheight}{594mm}%
+    \setlength{\doxtr@selectedtextwidth}{\dimexpr 841mm-2\doxtr@marginsize\relax}%
+  \fi
+  \ifdim\doxtr@requiredwidth>\doxtr@selectedtextwidth\relax
+    %% A0 landscape
+    \setlength{\doxtr@selectedpagewidth}{1189mm}%
+    \setlength{\doxtr@selectedpageheight}{841mm}%
+    \setlength{\doxtr@selectedtextwidth}{\dimexpr 1189mm-2\doxtr@marginsize\relax}%
+  \fi
+  \ifdim\doxtr@requiredwidth>\doxtr@selectedtextwidth\relax
+    %% 2A0 landscape (1682 x 1189mm)
+    \setlength{\doxtr@selectedpagewidth}{1682mm}%
+    \setlength{\doxtr@selectedpageheight}{1189mm}%
+    \setlength{\doxtr@selectedtextwidth}{\dimexpr 1682mm-2\doxtr@marginsize\relax}%
+  \fi
+  \ifdim\doxtr@requiredwidth>\doxtr@selectedtextwidth\relax
+    %% 4A0 landscape (2378 x 1682mm)
+    \setlength{\doxtr@selectedpagewidth}{2378mm}%
+    \setlength{\doxtr@selectedpageheight}{1682mm}%
+    \setlength{\doxtr@selectedtextwidth}{\dimexpr 2378mm-2\doxtr@marginsize\relax}%
+  \fi
+  %% Beyond 4A0: keep doubling the shorter side (landscape orientation)
+  %% until the textwidth accommodates the required width.
+  %% Each iteration: new_width = old_height * 2, new_height = old_width
+  %% (rotated doubling preserving A-series aspect ratio).
+  \ifdim\doxtr@requiredwidth>\doxtr@selectedtextwidth\relax
+    \setlength{\doxtr@tmpW}{\doxtr@selectedpagewidth}%
+    \setlength{\doxtr@tmpH}{\doxtr@selectedpageheight}%
+    \@whiledim\doxtr@requiredwidth>\doxtr@selectedtextwidth\do{%
+      %% Double: new page width = 2 * current height
+      %%         new page height = current width
+      \setlength{\doxtr@selectedpageheight}{\doxtr@tmpW}%
+      \setlength{\doxtr@selectedpagewidth}{2\doxtr@tmpH}%
+      %% Update temps for next iteration
+      \setlength{\doxtr@tmpW}{\doxtr@selectedpagewidth}%
+      \setlength{\doxtr@tmpH}{\doxtr@selectedpageheight}%
+      %% Textwidth = pagewidth - 2*margin
+      \setlength{\doxtr@selectedtextwidth}{\dimexpr\doxtr@selectedpagewidth-2\doxtr@marginsize\relax}%
+    }%
+  \fi
+}
+
+%% The adaptive landscape environment uses a plain \newenvironment
+%% (NOT \NewEnviron from the environ package) because longtable
+%% manipulates the output routine and is incompatible with token-list
+%% body capture.  Content flows directly between \begin and \end,
+%% allowing longtable page breaks to work naturally.
+%%
+%% NOTE: The column count argument must be given as [N] (optional arg).
+%% The \begin part sets dimensions; \end part restores them.
+\newlength{\doxtr@saved@textwidth}
+\newlength{\doxtr@saved@textheight}
+\newlength{\doxtr@saved@oddsidemargin}
+\newlength{\doxtr@saved@evensidemargin}
+\newlength{\doxtr@saved@topmargin}
+\newlength{\doxtr@saved@headheight}
+\newlength{\doxtr@saved@headsep}
+\newlength{\doxtr@saved@topskip}
+
+\newenvironment{doxtradaptivelandscape}[1][0]{%
+  %% #1 = column count (passed from the AST processor)
+  \setcounter{doxtr@colcount}{#1}%
+  \doxtr@selectpagesize
+  %% Save ALL current dimensions for explicit restoration
+  \setlength{\doxtr@savedpagewidth}{\pdfpagewidth}%
+  \setlength{\doxtr@savedpageheight}{\pdfpageheight}%
+  \setlength{\doxtr@saved@textwidth}{\textwidth}%
+  \setlength{\doxtr@saved@textheight}{\textheight}%
+  \setlength{\doxtr@saved@oddsidemargin}{\oddsidemargin}%
+  \setlength{\doxtr@saved@evensidemargin}{\evensidemargin}%
+  \setlength{\doxtr@saved@topmargin}{\topmargin}%
+  \setlength{\doxtr@saved@headheight}{\headheight}%
+  \setlength{\doxtr@saved@headsep}{\headsep}%
+  \setlength{\doxtr@saved@topskip}{\topskip}%
+  %% Flush pending content to the current page
+  \clearpage
+  %% Set physical PDF page size (global so the output routine
+  %% and KOMA-Script's layer system see correct values on every
+  %% continuation page, not just the first one).
+  \global\pdfpagewidth=\doxtr@selectedpagewidth\relax
+  \global\pdfpageheight=\doxtr@selectedpageheight\relax
+  %% Also update \paperwidth/\paperheight so TikZ's "current page"
+  %% node reflects the actual physical page dimensions.  Without this,
+  %% TikZ overlays (e.g. draft watermark) use stale portrait dimensions
+  %% and render nodes outside the visible page area.
+  \global\paperwidth=\doxtr@selectedpagewidth\relax
+  \global\paperheight=\doxtr@selectedpageheight\relax
+  %% Adjust text area dimensions for the new page.
+  %% All assignments are \global to prevent scoping issues: the
+  %% output routine re-reads these when shipping each page, and
+  %% KOMA-Script's scrlayer may cache dimensions globally.  Local
+  %% assignments are invisible to these subsystems.
+  \global\textwidth=\doxtr@selectedtextwidth\relax
+  \global\linewidth=\doxtr@selectedtextwidth\relax
+  \global\hsize=\doxtr@selectedtextwidth\relax
+  \global\columnwidth=\doxtr@selectedtextwidth\relax
+  \global\textheight=\dimexpr\doxtr@selectedpageheight-2\doxtr@marginsize\relax
+  %% Sync \vsize and \@colht so the output routine (and longtable's
+  %% page-break calculations via \pagegoal) respect the reduced page
+  %% height on ALL continuation pages, not just the first.
+  \global\@colht=\textheight
+  \global\vsize=\textheight\relax
+  %% Adjust margins (TeX origin is 1in from each edge)
+  \global\headheight=0pt\relax
+  \global\headsep=0pt\relax
+  \global\topmargin=\dimexpr\doxtr@marginsize-1in\relax
+  \global\oddsidemargin=\dimexpr\doxtr@marginsize-1in\relax
+  \global\evensidemargin=\dimexpr\doxtr@marginsize-1in\relax
+  \global\topskip=0pt\relax
+  \pagestyle{empty}%
+  \noindent
+}{%
+  %% End part: flush oversized page(s), then restore all dimensions.
+  %% All assignments are \global to match the begin part — the output
+  %% routine and KOMA-Script must see the restored portrait values
+  %% immediately after the landscape section ends.
+  \par\clearpage
+  \pagestyle{scrheadings}%
+  \global\pdfpagewidth=\doxtr@savedpagewidth\relax
+  \global\pdfpageheight=\doxtr@savedpageheight\relax
+  \global\paperwidth=\doxtr@savedpagewidth\relax
+  \global\paperheight=\doxtr@savedpageheight\relax
+  \global\textwidth=\doxtr@saved@textwidth\relax
+  \global\linewidth=\doxtr@saved@textwidth\relax
+  \global\hsize=\doxtr@saved@textwidth\relax
+  \global\columnwidth=\doxtr@saved@textwidth\relax
+  \global\textheight=\doxtr@saved@textheight\relax
+  %% Restore \vsize and \@colht so subsequent pages resume correct
+  %% page-break behaviour with portrait dimensions.
+  \global\@colht=\doxtr@saved@textheight\relax
+  \global\vsize=\doxtr@saved@textheight\relax
+  \global\oddsidemargin=\doxtr@saved@oddsidemargin\relax
+  \global\evensidemargin=\doxtr@saved@evensidemargin\relax
+  \global\topmargin=\doxtr@saved@topmargin\relax
+  \global\headheight=\doxtr@saved@headheight\relax
+  \global\headsep=\doxtr@saved@headsep\relax
+  \global\topskip=\doxtr@saved@topskip\relax
+}
+
+%% ----------------------------------------------------
+%% LANDSCAPE DETECTION UTILITY
+%% Reusable command for templates that need to branch on page
+%% orientation.  Compares physical PDF page dimensions at the
+%% point of use (works correctly inside shipout hooks).
+%%   \doxtriflandscape{<landscape code>}{<portrait code>}
+%% Child themes can redefine this via register_preamble_hook.
+%% ----------------------------------------------------
+\newcommand{\doxtriflandscape}[2]{%
+  \ifdim\pdfpagewidth>\pdfpageheight #1\else #2\fi
+}
+\makeatother
+
+%% ----------------------------------------------------
 %% RESOLVE SPHINX vs KOMA-SCRIPT CONFLICT
 %% Sphinx hardcodes fancyhdr and titlesec. We undefine 
 %% their macros so scrlayer-scrpage can safely load!
@@ -766,6 +1027,10 @@
 <% for t in need_types %>
 \expandafter\def\csname ddneedstylemap@<< t >>\endcsname{<< doxtr_need_styles_map[t] >>}
 <% endfor %>
+
+%% Abstracted so alternative need templates can redefine this command
+%% without requiring changes to the AST processor (needs.py).
+\newcommand{\doxtrneedcontentsep}{\tcblower}
 
 %% 4. The Dynamic Needs Router
 \newenvironment{doxtrneedboxrouter}[2]{%

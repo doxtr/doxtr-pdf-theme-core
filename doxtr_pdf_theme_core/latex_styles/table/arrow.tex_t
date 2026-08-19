@@ -11,6 +11,8 @@
 \definecolor{ddtableheaderfg}{rgb}{<< t_conf.header_font_color_cmyk >>}
 \definecolor{sphinxTableRowColorOdd}{rgb}{<< t_conf.row_color_odd_cmyk >>}
 \definecolor{sphinxTableRowColorEven}{rgb}{<< t_conf.row_color_even_cmyk >>}
+%% Header row background for Sphinx's colorrows machinery (longtable + tabular/tabulary)
+\definecolor{sphinxTableRowColorHeader}{rgb}{<< t_conf.header_background_color_cmyk >>}
 
 %% 2. Map Table Title Colors
 \definecolor{ddconttitlefgtable}{rgb}{<< t_conf.title_background_color_cmyk >>}

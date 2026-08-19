@@ -18,6 +18,20 @@
 %%%
 %%%   Both are measured from their respective page edge to the text body edge,
 %%%   and the watermark node is placed at the midpoint of each.
+%%%
+%%% Landscape detection:
+%%%   On landscape pages (\pdfpagewidth > \pdfpageheight), the long edge is
+%%%   the top/bottom rather than left/right. The watermark moves to the top
+%%%   edge (odd pages) or bottom edge (even pages) so it always sits on the
+%%%   long physical edge. Odd pages use rotate=0 (text reads left-to-right);
+%%%   even pages use rotate=180 (readable from the bottom edge in bound
+%%%   documents where the spine is on the left).
+%%%
+%%% Child theme override:
+%%%   Drop a replacement `draft/default.tex_t` into your theme's
+%%%   `latex_styles/` directory to completely replace this watermark logic.
+%%%   The \doxtriflandscape{<landscape>}{<portrait>} utility command
+%%%   (defined in preamble.tex_t) is available for orientation-aware logic.
 \newlength{\dddoddmarginwidth}
 \newlength{\dddevenmarginwidth}
 \AtBeginDocument{%
@@ -39,24 +53,51 @@
   \ifdim\dddevenmarginwidth<1cm\setlength{\dddevenmarginwidth}{1cm}\fi
 }
 \definecolor{dddraftcolor}{rgb}{<< doxtr_draft_color_cmyk >>}
+%% Shared TikZ style for all watermark nodes.
+%% Factored out to avoid repeating opacity, color, and font settings
+%% across the four positioning branches (landscape/portrait × odd/even).
+\tikzset{dddraftstyle/.style={
+    anchor=center,
+    text opacity=<< doxtr_draft_opacity >>,
+    text=dddraftcolor,
+    font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>
+}}
 \AddToHook{shipout/background}{%
   \begin{tikzpicture}[remember picture, overlay]
-  \ifodd\value{page}
-    \coordinate (ddmarginmid) at
-      ([xshift={0.5\dddoddmarginwidth}]current page.west);
-    \node[rotate=90, anchor=center,
-          text opacity=<< doxtr_draft_opacity >>,
-          text=dddraftcolor,
-          font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>]
-      at (ddmarginmid) {<< doxtr_draft_text >>};
-  \else
-    \coordinate (ddmarginmid) at
-      ([xshift={-0.5\dddevenmarginwidth}]current page.east);
-    \node[rotate=-90, anchor=center,
-          text opacity=<< doxtr_draft_opacity >>,
-          text=dddraftcolor,
-          font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>]
-      at (ddmarginmid) {<< doxtr_draft_text >>};
-  \fi
+  %% ---------------------------------------------------------------
+  %% Landscape detection via \doxtriflandscape (defined in
+  %% preamble.tex_t): when the physical PDF page width exceeds its
+  %% height the page is in landscape orientation.  The long edge is
+  %% now top/bottom, so we place the watermark there instead.
+  %% ---------------------------------------------------------------
+  \doxtriflandscape{%
+    %% --- LANDSCAPE MODE: watermark on top/bottom (long) edges ---
+    \ifodd\value{page}
+      %% Odd landscape page: watermark centred along the top edge.
+      %% yshift moves it inward by half the portrait margin width so
+      %% the text sits at a visually consistent distance from the edge.
+      \node[dddraftstyle, rotate=0]
+        at ([yshift={-0.5\dddoddmarginwidth}]current page.north) {<< doxtr_draft_text >>};
+    \else
+      %% Even landscape page: watermark centred along the bottom edge.
+      %% rotate=180 keeps the text readable from the bottom edge for
+      %% bound documents (spine on the left when viewing landscape).
+      \node[dddraftstyle, rotate=180]
+        at ([yshift={0.5\dddevenmarginwidth}]current page.south) {<< doxtr_draft_text >>};
+    \fi
+  }{%
+    %% --- PORTRAIT MODE: watermark on left/right (long) edges ---
+    \ifodd\value{page}
+      \coordinate (ddmarginmid) at
+        ([xshift={0.5\dddoddmarginwidth}]current page.west);
+      \node[dddraftstyle, rotate=90]
+        at (ddmarginmid) {<< doxtr_draft_text >>};
+    \else
+      \coordinate (ddmarginmid) at
+        ([xshift={-0.5\dddevenmarginwidth}]current page.east);
+      \node[dddraftstyle, rotate=-90]
+        at (ddmarginmid) {<< doxtr_draft_text >>};
+    \fi
+  }%
   \end{tikzpicture}%
 }

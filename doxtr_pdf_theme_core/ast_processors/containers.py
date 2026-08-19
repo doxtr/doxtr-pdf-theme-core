@@ -10,6 +10,7 @@ from sphinx.util import logging
 from ..latex_escape import esc_latex
 from ..core_config import VALID_RENDER_MODES, RenderMode, validate_render_mode
 from ..utils import _RE_SAFE_NAME
+from .landscape import LANDSCAPE_CLASS
 
 __all__ = ['process_containers_ast', 'resolve_container_class']
 
@@ -102,6 +103,10 @@ def process_containers_ast(app, doctree, docname):
 
     for node in list(doctree.traverse(nodes.container)):
         if node.get('doxtr_processed'):
+            continue
+
+        # Skip landscape containers — handled by the landscape processor
+        if LANDSCAPE_CLASS in node.get('classes', []):
             continue
 
         # Find the first class that either has a mapping entry or exists directly

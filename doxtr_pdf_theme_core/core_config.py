@@ -532,6 +532,12 @@ DOXTR_TABLES = {
         'title_font_color': '#FFFFFF',
         'title_font': 'Montserrat',
         'title_font_size': r'\bfseries',
+        'auto_landscape': True,            # Auto-rotate tables exceeding column threshold
+        'auto_landscape_threshold': 6,     # Column count triggering auto-landscape.
+                                           # 6 columns rarely fit portrait A4/Letter
+                                           # (165mm textwidth → ~27mm/col average).
+                                           # Lower for narrow page layouts; raise for wide
+                                           # or landscape-by-default documents.
     }
 }
 

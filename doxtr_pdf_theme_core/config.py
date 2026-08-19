@@ -144,6 +144,7 @@ VALID_KEYS: Dict[str, Set[str]] = {
         'header_background_color', 'header_font_color', 'header_font', 'header_font_size',
         'row_color_odd', 'row_color_even',
         'title_background_color', 'title_font_color', 'title_font', 'title_font_size',
+        'auto_landscape', 'auto_landscape_threshold',
     },
     'figures': {
         'style', 'caption_background_color', 'caption_font_color',

@@ -7,10 +7,14 @@
 \usetikzlibrary{patterns, fadings}
 
 %% 1. Table Colors
+%% ddtableheaderbg: used for \sphinxmidrule coloring (rule between header and body)
 \definecolor{ddtableheaderbg}{rgb}{<< t_conf.header_background_color_cmyk >>}
 \definecolor{ddtableheaderfg}{rgb}{<< t_conf.header_font_color_cmyk >>}
 \definecolor{sphinxTableRowColorOdd}{rgb}{<< t_conf.row_color_odd_cmyk >>}
 \definecolor{sphinxTableRowColorEven}{rgb}{<< t_conf.row_color_even_cmyk >>}
+%% sphinxTableRowColorHeader: actual header row background via Sphinx's colorrows
+%% machinery (works for longtable + tabular/tabulary uniformly)
+\definecolor{sphinxTableRowColorHeader}{rgb}{<< t_conf.header_background_color_cmyk >>}
 
 %% 2. Map Table Title Colors
 \definecolor{ddconttitlefgtable}{rgb}{<< t_conf.title_background_color_cmyk >>}
@@ -33,7 +37,7 @@
 \arrayrulecolor{black!30}
 
 %% Color the table rules to perfectly blend with the container headers!
-\def\sphinxtoprule{\arrayrulecolor{ddconttitlefgtable}\toprule\arrayrulecolor{black!30}}
+\def\sphinxtoprule{\arrayrulecolor{ddconttitlefgtable}\toprule\arrayrulecolor{black!30}\sphinxtabletoprulehook}
 \def\sphinxmidrule{\arrayrulecolor{ddtableheaderbg}\midrule\arrayrulecolor{black!30}}
 \def\sphinxbottomrule{\arrayrulecolor{ddconttitlefgtable}\bottomrule\arrayrulecolor{black!30}}
 

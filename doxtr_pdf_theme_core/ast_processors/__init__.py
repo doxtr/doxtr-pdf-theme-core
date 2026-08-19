@@ -12,6 +12,7 @@ Each processor handles a specific type of RST/Sphinx element:
 - highlights: Highlights directive styling
 - needs: sphinx-needs requirement boxes
 - topics: Topic and contents directive styled boxes
+- landscape: Forced and automatic landscape page orientation
 """
 from .containers import process_containers_ast
 from .tables import process_tables_ast
@@ -21,6 +22,15 @@ from .sidebars import process_sidebar_ast, render_nodes_to_latex
 from .highlights import process_highlights_ast
 from .needs import process_needs_ast
 from .topics import process_topics_ast
+from .landscape import (
+    process_landscape_ast,
+    wrap_in_landscape,
+    register_landscape_wrapper,
+    LANDSCAPE_CLASS,
+    NO_LANDSCAPE_CLASS,
+    FORCE_LANDSCAPE_CLASS,
+    DEFAULT_MIN_COLUMNS,
+)
 
 __all__ = [
     'process_containers_ast',
@@ -32,4 +42,11 @@ __all__ = [
     'process_highlights_ast',
     'process_needs_ast',
     'process_topics_ast',
+    'process_landscape_ast',
+    'wrap_in_landscape',
+    'register_landscape_wrapper',
+    'LANDSCAPE_CLASS',
+    'NO_LANDSCAPE_CLASS',
+    'FORCE_LANDSCAPE_CLASS',
+    'DEFAULT_MIN_COLUMNS',
 ]

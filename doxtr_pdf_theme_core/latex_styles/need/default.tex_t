@@ -1,15 +1,32 @@
+%% Need box template: defines the tcolorbox that renders sphinx-needs items.
+%% Uses bicolor skin to create a two-zone layout:
+%%   upper = metadata section (need ID, status, links) with colored background
+%%   lower = content section (the requirement description) with white background
+%%
+%% The bicolor skin handles upper/lower backgrounds natively across page breaks,
+%% unlike the previous skin=enhanced approach which relied on fragile TikZ overlays
+%% in segmentation code (only rendered on one page fragment).
+%%
+%% Arguments (two-phase resolution):
+%%   << need_style_name >> - Jinja2 build-time: structural style name (stamps the box definition)
+%%   #1 - LaTeX runtime: need type key (e.g. 'sdr', 'req'), selects colors via ddneed@<type>@<prop>
+%%   #2 - LaTeX runtime: rendered title text (e.g. "SDR-0003: Yearly recertification")
+%%
+%% enforce breakable: ensures nested breakable boxes (e.g. admonitions inside content)
+%%   can split across pages (requires tcolorbox >= 6.0).
 \newtcolorbox{ddneedbox@<< need_style_name >>}[2]{
-    skin=enhanced, breakable, parbox=false, sharp corners, boxrule=0.5pt,
+    skin=bicolor, breakable, enforce breakable, parbox=false, sharp corners, boxrule=0.5pt,
     before skip=\csname ddneed@#1@beforeskip\endcsname,
     after skip=\csname ddneed@#1@afterskip\endcsname,
     colframe=ddneed@#1@titlebg, colbacktitle=ddneed@#1@titlebg, coltitle=ddneed@#1@titlefg, fonttitle=\csname ddneed@#1@titlefont\endcsname,
-    colback=ddneed@#1@contentbg, colupper=ddneed@#1@metafg, fontupper=\csname ddneed@#1@metafont\endcsname,
+    %% Upper (metadata) background uses metabg; lower (content) uses contentbg
+    colback=ddneed@#1@metabg, colbacklower=ddneed@#1@contentbg,
+    colupper=ddneed@#1@metafg, fontupper=\csname ddneed@#1@metafont\endcsname,
     collower=ddneed@#1@contentfg, fontlower=\csname ddneed@#1@contentfont\endcsname,
-    segmentation code={
-        \path[fill=ddneed@#1@metabg] (interior.north west) rectangle (segmentation.east);
-        \csname ddneed@#1@segstyle\endcsname
-    },
-    before upper={\let\toprule\empty\let\midrule\empty\let\bottomrule\empty\let\hline\empty\hypersetup{linkcolor=ddneed@#1@metafg,urlcolor=ddneed@#1@metafg,citecolor=ddneed@#1@metafg,filecolor=ddneed@#1@metafg}},
-    before lower={\hypersetup{linkcolor=ddneed@#1@contentfg,urlcolor=ddneed@#1@contentfg,citecolor=ddneed@#1@contentfg,filecolor=ddneed@#1@contentfg}},
+    %% Segmentation line between metadata and content zones
+    segmentation style={draw=ddneed@#1@seglinefg, solid, line width=0.5pt},
+    %% Suppress booktabs rules from sphinx-needs metadata table; override hyperref link colors per zone
+    before upper={\let\toprule\empty\let\midrule\empty\let\bottomrule\empty\let\hline\empty\hypersetup{allcolors=ddneed@#1@metafg}},
+    before lower={\hypersetup{allcolors=ddneed@#1@contentfg}},
     title={{\csname ddneed@#1@iconcmd\endcsname #2}}
 }

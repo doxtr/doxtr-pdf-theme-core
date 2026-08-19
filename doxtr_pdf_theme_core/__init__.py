@@ -65,11 +65,18 @@ from .ast_processors import (
     process_highlights_ast,
     process_needs_ast,
     process_topics_ast,
+    process_landscape_ast,
+    wrap_in_landscape,
+    register_landscape_wrapper,
+    LANDSCAPE_CLASS,
+    NO_LANDSCAPE_CLASS,
+    FORCE_LANDSCAPE_CLASS,
+    DEFAULT_MIN_COLUMNS,
 )
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -102,6 +109,12 @@ __all__ = [
     'register_preamble_hook',
     'register_config_transform',
     'register_color_operation',
+    # Landscape API
+    'register_landscape_wrapper',
+    'wrap_in_landscape',
+    'LANDSCAPE_CLASS',
+    'NO_LANDSCAPE_CLASS',
+    'FORCE_LANDSCAPE_CLASS',
     # Font registration API
     'register_font_family',
     'register_font_families',
@@ -150,6 +163,50 @@ _BUILTIN_PREAMBLE_VARS: frozenset = frozenset({
     'doxtr_rendered_figures',
     'doxtr_rendered_draft',
 })
+
+# --- TABULARY OVERFLOW GUARD ---
+# Injected as a preamble hook so it survives child theme preamble overrides.
+# Detection relies on tabulary's internal \let\equation$ during trial passes
+# (same trick as Sphinx's sphinxlatexgraphics.sty).
+_TABULARY_GUARD_LATEX = r"""
+%% TABULARY OVERFLOW GUARD (doxtr-pdf-theme-core)
+%% Prevents "Dimension too large" errors during tabulary trial passes.
+%% Detection: tabulary sets \let\equation$ during trial passes,
+%% so \ifx\equation$ is true only in that context (same trick as
+%% Sphinx's sphinxlatexgraphics.sty). If tabulary is replaced or
+%% this detection changes, disable via doxtr_tabulary_overflow_guard=False.
+\makeatletter
+\let\doxtr@orig@rowcolor\rowcolor
+\def\rowcolor{%
+  \ifx\equation$%$%
+    \expandafter\doxtr@eat@rowcolor
+  \else
+    \expandafter\doxtr@orig@rowcolor
+  \fi
+}
+\def\doxtr@eat@rowcolor{\@ifnextchar[\doxtr@eat@rc@opt\doxtr@eat@rc@mand}%
+\def\doxtr@eat@rc@opt[#1]#2{\@ifnextchar[\doxtr@eat@rc@ovhL{}}%
+\def\doxtr@eat@rc@mand#1{\@ifnextchar[\doxtr@eat@rc@ovhL{}}%
+\def\doxtr@eat@rc@ovhL[#1]{\@ifnextchar[\doxtr@eat@rc@ovhR{}}%
+\def\doxtr@eat@rc@ovhR[#1]{}%
+%%
+%% DOXTR_TABULARY_TYMAX: 2000pt supports up to 8 T-columns without
+%% exceeding \maxdimen (16383pt). Formula: ceil(maxdimen / tymax) >= N columns.
+%% 2000pt >> any page width so tabulary's paragraph balancing is unaffected.
+\setlength{\tymax}{2000pt}
+\makeatother
+"""
+
+
+def _inject_tabulary_guard():
+    """Return tabulary guard LaTeX for preamble injection.
+
+    This function is registered as a preamble hook when
+    ``doxtr_tabulary_overflow_guard`` is True. The enable/disable
+    check happens at registration time in ``config_inited()``.
+    """
+    return _TABULARY_GUARD_LATEX
+
 
 # --- EXTENSIBLE PREAMBLE HOOK REGISTRY (Phase 2.8) ---
 # Theme authors may inject LaTeX into the document preamble without copying
@@ -671,6 +728,29 @@ def config_inited(app, config):
         config.latex_engine = 'lualatex'
     if not config.latex_docclass: config.latex_docclass = {'manual': 'scrbook'}
     else: config.latex_docclass.setdefault('manual', 'scrbook')
+
+    # Tabulary overflow guard — injected via preamble hook to survive child theme overrides.
+    # Guard against duplicate registration on autobuild re-runs.
+    if getattr(config, 'doxtr_tabulary_overflow_guard', True):
+        if not any(fn is _inject_tabulary_guard for fn, _ in _preamble_hooks):
+            register_preamble_hook(_inject_tabulary_guard, position='after_packages')
+
+    # --- Table style: ensure colorrows is enabled ---
+    # Sphinx's colorrows machinery is the only reliable way to colour longtable
+    # header rows.  The manual \rowcolor injection in the AST processor works for
+    # tabular/tabulary but is completely ignored for longtables (header rows are
+    # assembled as strings during visit_row, before the AST processor's raw nodes
+    # are read).  colorrows activates \sphinxTableRowColorHeader for all table
+    # types uniformly.  We merge rather than replace so user/theme values are kept.
+    # Gated by doxtr_enable_table_processor so child themes can fully opt out.
+    if getattr(config, 'doxtr_enable_table_processor', True):
+        _raw_table_style = getattr(config, 'latex_table_style', None)
+        _user_table_style = list(_raw_table_style) if isinstance(_raw_table_style, (list, tuple)) else []
+        if 'colorrows' not in _user_table_style:
+            _user_table_style.append('colorrows')
+        if 'booktabs' not in _user_table_style:
+            _user_table_style.insert(0, 'booktabs')
+        config.latex_table_style = _user_table_style
 
     safe_project = get_safe_filename(config.project)
     if not config.latex_documents or 'outpdfname.tex' in config.latex_documents[0][1]:
@@ -2864,6 +2944,11 @@ def setup(app):
     app.add_config_value('doxtr_enable_highlights_processor', True, 'env')
     app.add_config_value('doxtr_enable_needs_processor', True, 'env')
     app.add_config_value('doxtr_enable_topics_processor', True, 'env')
+    app.add_config_value('doxtr_enable_landscape_processor', True, 'env')
+    app.add_config_value('doxtr_table_auto_landscape', True, 'env')
+    app.add_config_value('doxtr_landscape_min_columns', DEFAULT_MIN_COLUMNS, 'env')
+    app.add_config_value('doxtr_landscape_skip_table_classes', [], 'env')
+    app.add_config_value('doxtr_tabulary_overflow_guard', True, 'env')
 
     app.connect('config-inited', config_inited, priority=900)
     app.connect('build-finished', build_finished)
@@ -2879,6 +2964,7 @@ def setup(app):
     app.connect('doctree-resolved', process_codeblocks_ast, priority=995)
     app.connect('doctree-resolved', process_epigraph_ast, priority=997)
     app.connect('doctree-resolved', process_needs_ast, priority=999)
+    app.connect('doctree-resolved', process_landscape_ast, priority=985)
     app.connect('builder-inited', _connect_deferred_custom_processors)  # priority=500 (default): fires after all extension setup() calls
     
     return {'version': __version__, 'parallel_read_safe': True, 'parallel_write_safe': False}

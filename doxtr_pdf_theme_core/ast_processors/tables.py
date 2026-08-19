@@ -1,18 +1,26 @@
-"""AST processor for table header styling.
+"""AST processor for table styling (reserved extension point).
 
-This module handles the injection of row colors into table headers
-for proper LaTeX table styling.
+Header row colouring is handled by Sphinx's ``colorrows`` machinery via
+``\\sphinxTableRowColorHeader`` defined in the table ``.tex_t`` templates.
+This works uniformly for all table types (tabular, tabulary, longtable).
+
+This module is retained as a reserved hook for child themes or future
+extensions that need doctree-level table manipulation.  The
+``doxtr_enable_table_processor`` config flag gates execution.
 """
-from docutils import nodes
 
 __all__ = ['process_tables_ast']
 
 
 def process_tables_ast(app, doctree, docname):
-    """Process table nodes and inject header row coloring.
+    """Reserved hook for doctree-level table processing.
 
-    Adds \\rowcolor commands to table header rows for consistent
-    styling across the document.
+    Currently a no-op.  Header row background colouring is handled by
+    Sphinx's ``colorrows`` machinery (``\\sphinxTableRowColorHeader``),
+    which works for all table types including longtable.
+
+    Retained as an extension point — child themes can monkey-patch this
+    function or register additional processors at adjacent priorities.
 
     Skipped if ``doxtr_enable_table_processor`` is False.
 
@@ -25,13 +33,3 @@ def process_tables_ast(app, doctree, docname):
         return
     if getattr(app.builder, 'format', '') != 'latex':
         return
-    
-    for node in list(doctree.traverse(nodes.table)):
-        if node.get('doxtr_processed_table'):
-            continue
-        node['doxtr_processed_table'] = True
-        
-        for tgroup in node.traverse(nodes.tgroup):
-            for thead in tgroup.traverse(nodes.thead):
-                for row in thead.traverse(nodes.row):
-                    row.insert(0, nodes.raw('', r'\rowcolor{ddtableheaderbg}', format='latex'))
