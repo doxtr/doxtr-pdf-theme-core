@@ -5,7 +5,7 @@ Sphinx document trees into LaTeX-compatible structures for PDF output.
 
 Each processor handles a specific type of RST/Sphinx element:
 - containers: Custom styled container boxes
-- tables: Table header styling and row coloring
+- tables: Vertical mode fix for block elements after headings; reserved table hook
 - codeblocks: Code block language injection
 - epigraphs: Epigraph/dictum formatting
 - sidebars: Sidebar boxes with text wrapping
@@ -15,7 +15,9 @@ Each processor handles a specific type of RST/Sphinx element:
 - landscape: Forced and automatic landscape page orientation
 """
 from .containers import process_containers_ast
-from .tables import process_tables_ast
+from .tables import (process_tables_ast, fix_block_after_paragraph,
+                     PARAGRAPH_FIX_PRIORITY, register_par_fix_block_type,
+                     register_par_fix_skip_type)
 from .codeblocks import process_codeblocks_ast
 from .epigraphs import process_epigraph_ast
 from .sidebars import process_sidebar_ast, render_nodes_to_latex
@@ -35,6 +37,10 @@ from .landscape import (
 __all__ = [
     'process_containers_ast',
     'process_tables_ast',
+    'fix_block_after_paragraph',
+    'PARAGRAPH_FIX_PRIORITY',
+    'register_par_fix_block_type',
+    'register_par_fix_skip_type',
     'process_codeblocks_ast',
     'process_epigraph_ast',
     'process_sidebar_ast',

@@ -59,6 +59,10 @@ import doxtr_pdf_theme_core.fonts as _fonts_mod
 from .ast_processors import (
     process_containers_ast,
     process_tables_ast,
+    fix_block_after_paragraph,
+    PARAGRAPH_FIX_PRIORITY,
+    register_par_fix_block_type,
+    register_par_fix_skip_type,
     process_codeblocks_ast,
     process_epigraph_ast,
     process_sidebar_ast,
@@ -73,10 +77,15 @@ from .ast_processors import (
     FORCE_LANDSCAPE_CLASS,
     DEFAULT_MIN_COLUMNS,
 )
+from .dark_file_swap import (
+    swap_dark_sources,
+    swap_dark_includes,
+    register_dark_swap_directive,
+)
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -115,6 +124,11 @@ __all__ = [
     'LANDSCAPE_CLASS',
     'NO_LANDSCAPE_CLASS',
     'FORCE_LANDSCAPE_CLASS',
+    # Table/paragraph fix API
+    'fix_block_after_paragraph',
+    'PARAGRAPH_FIX_PRIORITY',
+    'register_par_fix_block_type',
+    'register_par_fix_skip_type',
     # Font registration API
     'register_font_family',
     'register_font_families',
@@ -124,6 +138,8 @@ __all__ = [
     'inject_font_features',
     'hex_dark_invert',
     'adapt_color_to_page',
+    # Dark file swap API
+    'register_dark_swap_directive',
     # Dark mode strategy constants (for testing and child theme introspection)
     '_DARK_STRATEGY_LUMINANCE_THRESHOLD',
     '_ADAPTATION_LUMINANCE_THRESHOLD',
@@ -316,6 +332,8 @@ def register_ast_processor(fn, doctype=None, priority=992) -> None:
         992 – default for register_ast_processor (between core processors and dark/topic processing)
         991 – process_dark_images_ast
         990 – process_topics_ast
+        985 – process_landscape_ast
+        980 – fix_block_after_paragraph
 
     Args:
         fn:       A callable with signature fn(app, doctree, docname) -> None.
@@ -2950,6 +2968,15 @@ def setup(app):
     app.add_config_value('doxtr_landscape_skip_table_classes', [], 'env')
     app.add_config_value('doxtr_tabulary_overflow_guard', True, 'env')
 
+    # Dark file swap: intercepts RST/MyST source text before parsing to rewrite
+    # directive file arguments to their _dark variants. Targets extensions that
+    # consume file content at parse time (PlantUML, Mermaid, include, etc.).
+    app.add_config_value('doxtr_enable_dark_file_swap', True, 'env')
+    app.add_config_value('doxtr_dark_file_swap_directives', {}, 'env')
+    app.add_config_value('doxtr_dark_file_swap_extensions', None, 'env')
+    app.add_config_value('doxtr_dark_file_swap_extra_extensions', [], 'env')
+    app.add_config_value('doxtr_dark_file_swap_exclude', [], 'env')
+
     app.connect('config-inited', config_inited, priority=900)
     app.connect('build-finished', build_finished)
     app.connect('build-finished', _recolour_dark_images)
@@ -2957,6 +2984,7 @@ def setup(app):
     app.connect('doctree-resolved', process_dark_images_ast, priority=991)
     app.connect('doctree-resolved', _process_image_adapt_ast, priority=990)
     app.connect('doctree-resolved', process_containers_ast, priority=998)
+    app.connect('doctree-resolved', fix_block_after_paragraph, priority=PARAGRAPH_FIX_PRIORITY)
     app.connect('doctree-resolved', process_sidebar_ast, priority=994)
     app.connect('doctree-resolved', process_highlights_ast, priority=993)
     app.connect('doctree-resolved', process_topics_ast, priority=990)
@@ -2966,5 +2994,19 @@ def setup(app):
     app.connect('doctree-resolved', process_needs_ast, priority=999)
     app.connect('doctree-resolved', process_landscape_ast, priority=985)
     app.connect('builder-inited', _connect_deferred_custom_processors)  # priority=500 (default): fires after all extension setup() calls
-    
+
+    # Dark file swap: source-read hook rewrites directive file paths to _dark
+    # variants before parsing. Priority 500 (Sphinx default).
+    app.connect('source-read', swap_dark_sources, priority=500)
+    # include-read requires Sphinx >= 7.2.4 — guard with version check.
+    import sphinx as _sphinx_mod
+    if _sphinx_mod.version_info[:3] >= (7, 2, 4):
+        app.connect('include-read', swap_dark_includes, priority=500)
+    else:
+        logger.debug(
+            '[Doxtr Core] include-read event not available (Sphinx %s < 7.2.4). '
+            'Included files will not have directive paths swapped to _dark variants.',
+            _sphinx_mod.__version__
+        )
+
     return {'version': __version__, 'parallel_read_safe': True, 'parallel_write_safe': False}
