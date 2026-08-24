@@ -63,6 +63,9 @@ from .ast_processors import (
     PARAGRAPH_FIX_PRIORITY,
     register_par_fix_block_type,
     register_par_fix_skip_type,
+    register_column_width_algorithm,
+    ColumnInfo,
+    PT_TO_MM,
     process_codeblocks_ast,
     process_epigraph_ast,
     process_sidebar_ast,
@@ -85,7 +88,7 @@ from .dark_file_swap import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -129,6 +132,9 @@ __all__ = [
     'PARAGRAPH_FIX_PRIORITY',
     'register_par_fix_block_type',
     'register_par_fix_skip_type',
+    'register_column_width_algorithm',
+    'ColumnInfo',
+    'PT_TO_MM',
     # Font registration API
     'register_font_family',
     'register_font_families',
@@ -140,6 +146,8 @@ __all__ = [
     'adapt_color_to_page',
     # Dark file swap API
     'register_dark_swap_directive',
+    # Image processing API
+    'register_image_processor',
     # Dark mode strategy constants (for testing and child theme introspection)
     '_DARK_STRATEGY_LUMINANCE_THRESHOLD',
     '_ADAPTATION_LUMINANCE_THRESHOLD',
@@ -332,8 +340,8 @@ def register_ast_processor(fn, doctype=None, priority=992) -> None:
         992 – default for register_ast_processor (between core processors and dark/topic processing)
         991 – process_dark_images_ast
         990 – process_topics_ast
-        985 – process_landscape_ast
         980 – fix_block_after_paragraph
+        1001 – process_landscape_ast (after tables, reads doxtr_min_table_width_mm)
 
     Args:
         fn:       A callable with signature fn(app, doctree, docname) -> None.
@@ -563,6 +571,25 @@ _ADAPTATION_HINT_THRESHOLD = 0.10
 _RE_HASH_NUM = re.compile(r'#+1')
 
 
+def _nearest_valid_pointsize(size_pt: float) -> str:
+    """Return the nearest valid LaTeX document class font size option.
+
+    LaTeX document classes only accept 10pt, 11pt, or 12pt as class
+    options.  This function maps an arbitrary point size to the nearest
+    valid option so that no 'Unused global option' warning is emitted.
+
+    The actual text size is controlled separately via ``\\sphinxremdimen``
+    which accepts arbitrary dimensions.
+    """
+    # Midpoints between valid class sizes: 10pt ↔ 10.5 ↔ 11pt ↔ 11.5 ↔ 12pt
+    if size_pt <= 10.5:
+        return '10pt'
+    elif size_pt <= 11.5:
+        return '11pt'
+    else:
+        return '12pt'
+
+
 def _dark_invert_colors_in_dict(d: dict) -> dict:
     """Return a copy of d with all hex colour values dark-inverted.
 
@@ -707,6 +734,94 @@ def _resolve_sty_file(filename: str, override_paths: list, pkg_dir: Path) -> str
     return str(pkg_dir / "latex_styles" / filename)
 
 
+def _query_mono_char_width_ratio(font_path):
+    """Query the advance width ratio of the '0' glyph relative to em-square.
+
+    Uses fontTools to read the font's horizontal metrics table and compute
+    the ratio of the '0' glyph's advance width to the units-per-em value.
+    This ratio, multiplied by point size and 0.3528 (pt-to-mm), gives the
+    physical character width in mm for monospace content.
+
+    Args:
+        font_path: Path to a .ttf or .otf font file.
+
+    Returns:
+        Float ratio (advance_width / units_per_em), or 0.6 as fallback.
+    """
+    try:
+        from fontTools.ttLib import TTFont
+        font = TTFont(str(font_path))
+        hmtx = font['hmtx']
+        upm = font['head'].unitsPerEm
+        cmap = font.getBestCmap()
+        glyph_name = cmap.get(ord('0'))
+        if glyph_name:
+            width = hmtx[glyph_name][0]
+            return width / upm
+    except Exception as e:
+        logger.debug('Could not query font metrics for %s: %s', font_path, e)
+    return 0.6  # fallback: Courier default
+
+
+def _resolve_table_overflow_config(app, config, ctx):
+    """Resolve table overflow config values from merged tables config.
+
+    Populates doxtr_table_nobreak_patterns, doxtr_table_break_chars,
+    doxtr_table_column_width_algorithm, doxtr_table_auto_colwidths, and
+    doxtr_table_char_width_mm on config when they are not explicitly set
+    by the user. Values are read from the three-tier merged ``ctx`` dict
+    (not raw user config) so that theme-level overrides are respected.
+
+    Args:
+        app: The Sphinx application object.
+        config: The Sphinx config object (mutated).
+        ctx: Pipeline context dict from _stage_merge_and_resolve().
+             Expected keys: 'tables' (merged tables dict), 'g' (merged
+             globals dict), 'main_font_size_pt' (float).
+    """
+    # --- Resolve from merged tables config (three-tier: core → theme → user) ---
+    tables_merged = ctx.get('tables', {})
+    generic = tables_merged.get('generic', {}) if isinstance(tables_merged, dict) else {}
+
+    from .ast_processors.tables import DEFAULT_NOBREAK_PATTERNS, DEFAULT_BREAK_CHARS, DEFAULT_ALGORITHM
+
+    if getattr(config, 'doxtr_table_nobreak_patterns', None) is None:
+        config.doxtr_table_nobreak_patterns = generic.get('nobreak_patterns', DEFAULT_NOBREAK_PATTERNS)
+
+    if getattr(config, 'doxtr_table_break_chars', None) is None:
+        config.doxtr_table_break_chars = generic.get('break_chars', DEFAULT_BREAK_CHARS)
+
+    if getattr(config, 'doxtr_table_column_width_algorithm', None) is None:
+        config.doxtr_table_column_width_algorithm = generic.get('column_width_algorithm', DEFAULT_ALGORITHM)
+
+    if getattr(config, 'doxtr_table_auto_colwidths', None) is None:
+        config.doxtr_table_auto_colwidths = generic.get('auto_colwidths', True)
+
+    # --- Compute char_width_mm from mono font metrics ---
+    if getattr(config, 'doxtr_table_char_width_mm', None) is None:
+        g = ctx.get('g', {})
+        main_font_size_pt = ctx.get('main_font_size_pt', 11.5)
+        mono_font_name = g.get('mono_font', 'FiraCode Nerd Font')
+
+        # Try to find the mono font file from the font registry
+        char_width_ratio = 0.6  # fallback: Courier default
+        try:
+            for entry in _registered_fonts:
+                if entry.get('name', '') == mono_font_name:
+                    fonts_dir = entry.get('fonts_dir', '')
+                    upright = entry.get('upright', '')
+                    if fonts_dir and upright:
+                        font_path = Path(fonts_dir) / upright
+                        if font_path.exists():
+                            char_width_ratio = _query_mono_char_width_ratio(font_path)
+                    break
+        except Exception as e:
+            logger.debug('Could not resolve mono font metrics for char_width_mm: %s', e)
+
+        from .ast_processors.tables import PT_TO_MM
+        config.doxtr_table_char_width_mm = main_font_size_pt * char_width_ratio * PT_TO_MM
+
+
 def config_inited(app, config):
     """Process all configuration, resolve templates, and inject LaTeX preamble.
 
@@ -776,6 +891,10 @@ def config_inited(app, config):
 
     # --- PIPELINE STAGE 1: Merge & Resolve ---
     ctx = _stage_merge_and_resolve(app, config)
+
+    # --- Table overflow: resolve config defaults and compute char width ---
+    if getattr(config, 'doxtr_enable_table_processor', True):
+        _resolve_table_overflow_config(app, config, ctx)
 
     # --- PIPELINE STAGE 2: Build & Render Preamble ---
     _stage_build_and_render_preamble(app, config, ctx)
@@ -1668,11 +1787,12 @@ def _stage_build_and_render_preamble(app, config, ctx):
         template_vars['doxtr_show_list_of_listings'] = g.get('show_list_of_listings', False)
         template_vars['doxtr_appendix_chapter_numbering'] = g.get('appendix_chapter_numbering', True)
         template_vars['doxtr_headsep'] = g.get('headsep', '8mm')
-        template_vars['doxtr_footskip'] = g.get('footskip', '10mm')
+        template_vars['doxtr_footskip'] = g.get('footskip', '14mm')
         template_vars['doxtr_headheight'] = g.get('headheight', '18pt')
-        template_vars['doxtr_footheight'] = g.get('footheight', '25pt')
+        template_vars['doxtr_footheight'] = g.get('footheight', '30pt')
         template_vars['doxtr_main_font_size'] = main_font_size_str
         template_vars['doxtr_main_font_size_pt'] = main_font_size_pt
+        template_vars['doxtr_suppress_warnings'] = getattr(config, 'doxtr_suppress_warnings', True)
         template_vars['extensions'] = getattr(config, 'extensions', [])
 
         # --- DARK MODE TEMPLATE VARIABLES ---
@@ -1680,11 +1800,11 @@ def _stage_build_and_render_preamble(app, config, ctx):
         # page background and body text color rendering.
         template_vars['doxtr_dark_mode'] = dark_mode
         template_vars['doxtr_page_bg_cmyk'] = safe_cmyk(page_bg)
-        # Emit \pagecolor when page_bg is not white — needed for both dark mode
-        # AND light-mode adaptation where the page color differs from LaTeX default.
-        template_vars['doxtr_emit_pagecolor'] = (
-            dark_mode or (adapt_to_page and page_bg != '#FFFFFF')
-        )
+        # Always emit \pagecolor + \color for structural consistency between
+        # light and dark mode builds.  Without this, the whatsit nodes from
+        # \pagecolor/\color subtly affect \topskip calculations, causing
+        # different page breaks (and thus different page counts) between modes.
+        template_vars['doxtr_emit_pagecolor'] = True
         if dark_mode:
             # Maps config.doxtr_dark_text_color (hex) → RGB for preamble template
             _dark_text_color = getattr(config, 'doxtr_dark_text_color', '#DBDBDB')
@@ -1778,7 +1898,8 @@ def _stage_build_and_render_preamble(app, config, ctx):
         template_vars['doxtr_microtype_enabled'] = mt_enabled and not draft_text_active
         template_vars['doxtr_microtype_protrusion'] = microtype.get('protrusion', True)
         template_vars['doxtr_microtype_expansion'] = microtype.get('expansion', True)
-        template_vars['doxtr_microtype_kerning'] = microtype.get('kerning', True)
+        # Kerning is enabled by default but forced off in draft mode (fast iteration)
+        template_vars['doxtr_microtype_kerning'] = microtype.get('kerning', True) and not draft_text_active
         template_vars['doxtr_microtype_stretch'] = microtype.get('stretch', 10)
         template_vars['doxtr_microtype_shrink'] = microtype.get('shrink', 10)
 
@@ -2499,6 +2620,7 @@ def _stage_assemble_output(app, config, ctx):
     # Unpack context
     g = ctx['g']
     main_font_size_str = ctx['main_font_size_str']
+    main_font_size_pt = ctx['main_font_size_pt']
     dark_mode = ctx['dark_mode']
     adapt_to_page = ctx['adapt_to_page']
     wcag_level = ctx['wcag_level']
@@ -2585,14 +2707,31 @@ def _stage_assemble_output(app, config, ctx):
     #      respects any custom renderer registered via register_font_renderer().
     inject_font_features(config.latex_elements, dynamic_fontpkg, _all_registered)
 
+    # 8b. Inject early LuaTeX warning suppression callback into fontpkg.
+    #     This must run BEFORE \usepackage{sphinx} which triggers scrlayer-scrpage's
+    #     footheight check.  fontpkg is the last element Sphinx places before sphinx.sty.
+    if getattr(config, 'doxtr_suppress_warnings', True):
+        _early_lua_suppress = r"""
+%% Early KOMA-Script footheight fix (must precede sphinx.sty loading).
+%% scrlayer-scrpage checks footheight during sphinx.sty init and warns
+%% if it's below the required minimum. Setting it here prevents the
+%% warning from firing in the first place.
+\setlength{\footheight}{30pt}
+"""
+        config.latex_elements['fontpkg'] = config.latex_elements.get('fontpkg', '') + _early_lua_suppress
+
     # 9. Set late-call guard so register_font_family() called after this point warns.
     _set_fonts_processed()
 
+    # Use the nearest valid LaTeX class option (10pt/11pt/12pt) to avoid
+    # "Unused global option" warnings.  The actual base text size is
+    # controlled via \sphinxremdimen which is overridden in the preamble.
+    _valid_pointsize = _nearest_valid_pointsize(main_font_size_pt)
     default_elements = {
         'fncychap': '',
         'tableofcontents': '\\tableofcontents',
         'papersize': 'a4paper',
-        'pointsize': main_font_size_str,
+        'pointsize': _valid_pointsize,
         'extraclassoptions': 'openright,twoside,parskip=half,numbers=noenddot',
     }
     for key, value in default_elements.items():
@@ -2753,7 +2892,21 @@ def _stage_assemble_output(app, config, ctx):
     #   before_packages → my_preamble (core packages/structure) → after_packages
     #   → before_styles → rendered style blocks → after_styles → lol_tracker
     _styles_block = f"{doxtr_rendered_code}\n{doxtr_rendered_sidebar}\n{doxtr_rendered_highlights}\n{doxtr_rendered_topic}\n{doxtr_rendered_contents}\n{_custom_rendered}"
-    _assembled = f"{_hooks_before_pkg}\n{my_preamble}\n{_hooks_after_pkg}\n{_hooks_before_styles}\n{_styles_block}\n{_hooks_after_styles}\n{lol_tracker}"
+
+    # Override \sphinxremdimen if the class option differs from the actual
+    # desired base font size (e.g. class gets 11pt but we want 11.5pt).
+    # _valid_pointsize was computed earlier (line ~2614) for default_elements.
+    # Ensure main_font_size_str has a unit suffix for valid TeX dimension assignment.
+    _size_str_for_rem = main_font_size_str if main_font_size_str.rstrip().endswith('pt') else f'{main_font_size_pt}pt'
+    _remdimen_override = ''
+    if _valid_pointsize != _size_str_for_rem:
+        _remdimen_override = (
+            f'%% Correct \\sphinxremdimen: class option is {_valid_pointsize} '
+            f'but configured base size is {_size_str_for_rem}\n'
+            f'\\sphinxremdimen = {_size_str_for_rem}\\relax\n'
+        )
+
+    _assembled = f"{_remdimen_override}{_hooks_before_pkg}\n{my_preamble}\n{_hooks_after_pkg}\n{_hooks_before_styles}\n{_styles_block}\n{_hooks_after_styles}\n{lol_tracker}"
 
     if 'preamble' in config.latex_elements: 
         config.latex_elements['preamble'] += f"\n{_assembled}"
@@ -2784,6 +2937,9 @@ from .image_processing import (
     _recolour_dark_images,
     _adapt_image_backgrounds,
     _process_image_adapt_ast,
+    register_image_processor,
+    _reset_image_processor_registry,
+    _get_parallel_workers,
 )
 
 
@@ -2913,6 +3069,10 @@ def setup(app):
     # Pixels with all RGB channels >= (255 - fuzz) are considered "white".
     # Default 5 catches anti-aliased edges and minor compression artifacts.
     app.add_config_value('doxtr_adapt_image_white_fuzz', _ADAPT_IMAGE_WHITE_FUZZ_DEFAULT, 'env')
+    # Number of parallel workers for image processing (dark mode + page adaptation).
+    # 'auto' or 0: min(cpu_count, 8). 1: sequential (no pool overhead).
+    # N > 1: use N parallel workers via ProcessPoolExecutor.
+    app.add_config_value('doxtr_image_parallel_workers', 'auto', 'env')
     # Adaptation state dict set by config_inited — exposes active/designed_page/
     # compress_dark/compress_light for child themes and image processing hooks.
     app.add_config_value('doxtr_adaptation_state', {}, 'env')
@@ -2968,6 +3128,13 @@ def setup(app):
     app.add_config_value('doxtr_landscape_skip_table_classes', [], 'env')
     app.add_config_value('doxtr_tabulary_overflow_guard', True, 'env')
 
+    # Table cell overflow protection (Phase 1 + Phase 2 config)
+    app.add_config_value('doxtr_table_nobreak_patterns', None, 'env')
+    app.add_config_value('doxtr_table_break_chars', None, 'env')
+    app.add_config_value('doxtr_table_column_width_algorithm', None, 'env')
+    app.add_config_value('doxtr_table_auto_colwidths', None, 'env')
+    app.add_config_value('doxtr_table_char_width_mm', None, 'env')
+
     # Dark file swap: intercepts RST/MyST source text before parsing to rewrite
     # directive file arguments to their _dark variants. Targets extensions that
     # consume file content at parse time (PlantUML, Mermaid, include, etc.).
@@ -2976,6 +3143,7 @@ def setup(app):
     app.add_config_value('doxtr_dark_file_swap_extensions', None, 'env')
     app.add_config_value('doxtr_dark_file_swap_extra_extensions', [], 'env')
     app.add_config_value('doxtr_dark_file_swap_exclude', [], 'env')
+    app.add_config_value('doxtr_suppress_warnings', True, 'env')
 
     app.connect('config-inited', config_inited, priority=900)
     app.connect('build-finished', build_finished)
@@ -2992,7 +3160,9 @@ def setup(app):
     app.connect('doctree-resolved', process_codeblocks_ast, priority=995)
     app.connect('doctree-resolved', process_epigraph_ast, priority=997)
     app.connect('doctree-resolved', process_needs_ast, priority=999)
-    app.connect('doctree-resolved', process_landscape_ast, priority=985)
+    # Landscape must run AFTER tables (ascending priority order in Sphinx)
+    # so it can read doxtr_min_table_width_mm set by the table processor.
+    app.connect('doctree-resolved', process_landscape_ast, priority=1001)
     app.connect('builder-inited', _connect_deferred_custom_processors)  # priority=500 (default): fires after all extension setup() calls
 
     # Dark file swap: source-read hook rewrites directive file paths to _dark
@@ -3009,4 +3179,4 @@ def setup(app):
             _sphinx_mod.__version__
         )
 
-    return {'version': __version__, 'parallel_read_safe': True, 'parallel_write_safe': False}
+    return {'version': __version__, 'parallel_read_safe': True, 'parallel_write_safe': True}

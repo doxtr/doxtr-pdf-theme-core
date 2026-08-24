@@ -1,5 +1,14 @@
 %%% Draft Watermark — default style
-%%% Centred in the outer margin on each page side; never overlaps content.
+%%% Centred in the outer margin on each page side.
+%%% Rendered in the foreground layer to stay visible above tcolorbox/code
+%%% block backgrounds that may extend into the margin.
+%%%
+%%% Single-pass rendering:
+%%%   This template does NOT use TikZ's `remember picture` mechanism.
+%%%   Node positions are computed from \paperwidth/\paperheight directly,
+%%%   so the watermark renders correctly on the FIRST compilation pass
+%%%   (no .aux dependency).  The [overlay] option is used only to prevent
+%%%   the TikZ picture from consuming page space.
 %%%
 %%% Positioning strategy:
 %%%   \oddsidemargin and \evensidemargin are unreliable in KOMA-Script builds
@@ -13,19 +22,30 @@
 %%%   The safest runtime approach: use a \newlength pair captured \AtBeginDocument
 %%%   after all geometry packages have run:
 %%%
-%%%     \dddoddleftmargin  = actual left  margin on odd  pages
-%%%     \dddevenleftmargin = actual right margin on even pages (from page.east)
+%%%     \dddoddmarginwidth  = outer (right) margin width on odd pages
+%%%     \dddevenmarginwidth  = outer (left) margin width on even pages
 %%%
-%%%   Both are measured from their respective page edge to the text body edge,
-%%%   and the watermark node is placed at the midpoint of each.
+%%%   Both are measured from the outer page edge to the text body edge,
+%%%   and the watermark node is placed at the midpoint of the outer margin.
+%%%   This ensures the watermark appears on the wider (non-binding) side in
+%%%   twoside documents.  In oneside mode, margins are equal.
+%%%
+%%% Coordinate system (inside shipout/foreground with [overlay]):
+%%%   Origin is at the top-left corner of the shipped page.
+%%%   x increases to the right;  y increases UPWARD in TikZ convention,
+%%%   so page bottom is at y = -\paperheight.
+%%%
+%%%   Key reference points:
+%%%     Page east midpoint  = (\paperwidth, -0.5\paperheight)
+%%%     Page west midpoint  = (0, -0.5\paperheight)
+%%%     Page north midpoint = (0.5\paperwidth, 0)
+%%%     Page south midpoint = (0.5\paperwidth, -\paperheight)
 %%%
 %%% Landscape detection:
-%%%   On landscape pages (\pdfpagewidth > \pdfpageheight), the long edge is
-%%%   the top/bottom rather than left/right. The watermark moves to the top
-%%%   edge (odd pages) or bottom edge (even pages) so it always sits on the
-%%%   long physical edge. Odd pages use rotate=0 (text reads left-to-right);
-%%%   even pages use rotate=180 (readable from the bottom edge in bound
-%%%   documents where the spine is on the left).
+%%%   On landscape pages (\pdfpagewidth > \pdfpageheight), the content is
+%%%   rotated 90° CCW. The watermark is placed on the top edge (odd pages,
+%%%   rotate=-90) or bottom edge (even pages, rotate=90) of the physical
+%%%   PDF page — the long edges that are free of content.
 %%%
 %%% Child theme override:
 %%%   Drop a replacement `draft/default.tex_t` into your theme's
@@ -35,23 +55,26 @@
 \newlength{\dddoddmarginwidth}
 \newlength{\dddevenmarginwidth}
 \AtBeginDocument{%
-  % On odd pages:  left margin = distance from page left to text left
-  %   = 1in + \hoffset + \oddsidemargin  (standard LaTeX formula)
-  % We clamp to a minimum of 1cm so a near-zero or negative value still
-  % produces a visible, non-overlapping watermark.
-  \setlength{\dddoddmarginwidth}{1in}%
-  \addtolength{\dddoddmarginwidth}{\hoffset}%
-  \addtolength{\dddoddmarginwidth}{\oddsidemargin}%
+  % Compute the OUTER margin on each page side (the wider margin in twoside layouts):
+  %   Odd pages (right-hand): outer margin is on the RIGHT
+  %     = \paperwidth - \textwidth - left_margin
+  %     = \paperwidth - \textwidth - (1in + \hoffset + \oddsidemargin)
+  %   Even pages (left-hand): outer margin is on the LEFT
+  %     = 1in + \hoffset + \evensidemargin
+  % In oneside mode, \oddsidemargin == \evensidemargin so both margins are equal.
+  \setlength{\dddoddmarginwidth}{\paperwidth}%
+  \addtolength{\dddoddmarginwidth}{-\textwidth}%
+  \addtolength{\dddoddmarginwidth}{-1in}%
+  \addtolength{\dddoddmarginwidth}{-\hoffset}%
+  \addtolength{\dddoddmarginwidth}{-\oddsidemargin}%
+  %% Floor: 1cm prevents watermark from clipping if margin is degenerate (near-zero or negative)
   \ifdim\dddoddmarginwidth<1cm\setlength{\dddoddmarginwidth}{1cm}\fi
-  % On even pages: right margin = distance from text right to page right
-  %   = \paperwidth - (1in + \hoffset + \evensidemargin + \textwidth)
-  \setlength{\dddevenmarginwidth}{\paperwidth}%
-  \addtolength{\dddevenmarginwidth}{-1in}%
-  \addtolength{\dddevenmarginwidth}{-\hoffset}%
-  \addtolength{\dddevenmarginwidth}{-\evensidemargin}%
-  \addtolength{\dddevenmarginwidth}{-\textwidth}%
+  \setlength{\dddevenmarginwidth}{1in}%
+  \addtolength{\dddevenmarginwidth}{\hoffset}%
+  \addtolength{\dddevenmarginwidth}{\evensidemargin}%
   \ifdim\dddevenmarginwidth<1cm\setlength{\dddevenmarginwidth}{1cm}\fi
 }
+%% NOTE: doxtr_draft_color_cmyk is a legacy variable name; it contains RGB float values.
 \definecolor{dddraftcolor}{rgb}{<< doxtr_draft_color_cmyk >>}
 %% Shared TikZ style for all watermark nodes.
 %% Factored out to avoid repeating opacity, color, and font settings
@@ -62,41 +85,40 @@
     text=dddraftcolor,
     font=\normalfont<% if doxtr_draft_font %>\fontspec{<< doxtr_draft_font >>}<% endif %><< doxtr_draft_font_size >>
 }}
-\AddToHook{shipout/background}{%
-  \begin{tikzpicture}[remember picture, overlay]
+\AddToHook{shipout/foreground}{%
+  \begin{tikzpicture}[overlay]
   %% ---------------------------------------------------------------
   %% Landscape detection via \doxtriflandscape (defined in
   %% preamble.tex_t): when the physical PDF page width exceeds its
-  %% height the page is in landscape orientation.  The long edge is
-  %% now top/bottom, so we place the watermark there instead.
+  %% height the page is in landscape orientation.  The watermark is
+  %% placed on the top/bottom (long) edges: top on odd pages,
+  %% bottom on even pages.
   %% ---------------------------------------------------------------
   \doxtriflandscape{%
     %% --- LANDSCAPE MODE: watermark on top/bottom (long) edges ---
+    %% The page content is rotated 90° CCW. The watermark sits on the
+    %% long (top/bottom) physical edges so it doesn't overlap content.
+    %% Odd pages: watermark along the top edge, rotated 0° (text reads left-to-right).
+    %% Even pages: watermark along the bottom edge, rotated 180° (text reads right-to-left).
     \ifodd\value{page}
       %% Odd landscape page: watermark centred along the top edge.
-      %% yshift moves it inward by half the portrait margin width so
-      %% the text sits at a visually consistent distance from the edge.
       \node[dddraftstyle, rotate=0]
-        at ([yshift={-0.5\dddoddmarginwidth}]current page.north) {<< doxtr_draft_text >>};
+        at (0.5\paperwidth, -0.5\dddoddmarginwidth) {<< doxtr_draft_text >>};
     \else
       %% Even landscape page: watermark centred along the bottom edge.
-      %% rotate=180 keeps the text readable from the bottom edge for
-      %% bound documents (spine on the left when viewing landscape).
       \node[dddraftstyle, rotate=180]
-        at ([yshift={0.5\dddevenmarginwidth}]current page.south) {<< doxtr_draft_text >>};
+        at (0.5\paperwidth, -\paperheight+0.5\dddevenmarginwidth) {<< doxtr_draft_text >>};
     \fi
   }{%
-    %% --- PORTRAIT MODE: watermark on left/right (long) edges ---
+    %% --- PORTRAIT MODE: watermark on outer (long) edges ---
+    %% In twoside: even pages have outer margin on the right, odd on the left.
+    %% In oneside: both margins are equal so the visual result is the same.
     \ifodd\value{page}
-      \coordinate (ddmarginmid) at
-        ([xshift={0.5\dddoddmarginwidth}]current page.west);
       \node[dddraftstyle, rotate=90]
-        at (ddmarginmid) {<< doxtr_draft_text >>};
+        at (0.5\dddevenmarginwidth, -0.5\paperheight) {<< doxtr_draft_text >>};
     \else
-      \coordinate (ddmarginmid) at
-        ([xshift={-0.5\dddevenmarginwidth}]current page.east);
       \node[dddraftstyle, rotate=-90]
-        at (ddmarginmid) {<< doxtr_draft_text >>};
+        at (\paperwidth-0.5\dddoddmarginwidth, -0.5\paperheight) {<< doxtr_draft_text >>};
     \fi
   }%
   \end{tikzpicture}%

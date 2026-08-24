@@ -1478,7 +1478,7 @@ FEATURE_REGISTRY: dict[str, Feature] = {
                 conf_override="test_draft.py",
                 expected_latex_markers=[
                     r"DRAFT",
-                    r"AddToHook\{shipout/background\}",
+                    r"AddToHook\{shipout/foreground\}",
                 ],
                 status=FeatureStatus.COMPLETE,
             ),
@@ -1558,13 +1558,13 @@ FEATURE_REGISTRY: dict[str, Feature] = {
         sub_tests=[
             FeatureSubTest(
                 name="microtype_enabled_default",
-                description="Default microtype options (protrusion + expansion on, kerning off for compatibility)",
+                description="Default microtype options (protrusion + expansion on, kerning on for LuaTeX)",
                 rst_file="microtype.rst",
                 conf_override="test_microtype.py",
                 expected_latex_markers=[
                     r"protrusion=true",
                     r"expansion=true",
-                    r"kerning=false",
+                    r"kerning=true",
                     r"stretch=10",
                     r"shrink=10",
                 ],

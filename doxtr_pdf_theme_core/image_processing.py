@@ -5,10 +5,12 @@ This module handles all image manipulation for the doxtr-pdf-theme-core extensio
 - Page-adaptive image background replacement (flood-fill white detection)
 - Dark asset variant resolution (_dark file swap)
 - Per-image opt-out collection (no-auto-image-adapt class)
+- Parallel image processing via concurrent.futures (configurable)
 """
 import fnmatch
 import os
 from collections import deque
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from docutils import nodes
 from sphinx.util import logging
@@ -17,6 +19,96 @@ from .core_config import DOXTR_SEMANTIC_PALETTE_DARK_DEFAULTS
 from .utils import to_bool
 
 logger = logging.getLogger(__name__)
+
+
+# --- EXTENSIBLE IMAGE PROCESSOR REGISTRY ---
+# Child themes may register a custom image processing function that completely
+# replaces the built-in dark-mode or page-adaptation pipeline.
+# Each key is a position ('dark' or 'adapt'), each value is a callable with
+# signature fn(app, exception) -> None (same as the built-in handlers).
+_VALID_IMAGE_PROCESSOR_POSITIONS = frozenset({'dark', 'adapt'})
+_image_processor_registry: dict = {}
+
+
+def register_image_processor(fn, position='dark'):
+    """Register a custom image processor that replaces a built-in pipeline.
+
+    Allows child themes to completely replace the dark-mode or page-adaptation
+    image processing with their own implementation. When a custom processor is
+    registered, the built-in handler for that position is skipped entirely.
+
+    Must be called from the child theme's ``setup()`` function — before
+    ``build-finished`` fires.
+
+    Args:
+        fn: A callable with signature ``fn(app, exception) -> None``.
+            Receives the same arguments as Sphinx's ``build-finished`` event.
+        position: Which pipeline to replace. One of:
+            - ``'dark'``: Replaces ``_recolour_dark_images`` (dark mode
+              grayscale recolouring and color lightness inversion).
+            - ``'adapt'``: Replaces ``_adapt_image_backgrounds`` (page
+              background adaptation via flood-fill).
+
+    Raises:
+        ValueError: If *position* is not one of the valid positions.
+        TypeError: If *fn* is not callable.
+
+    Example::
+
+        from doxtr_pdf_theme_core import register_image_processor
+
+        def my_dark_processor(app, exception):
+            '''Custom dark mode image processing.'''
+            # ... custom implementation ...
+            pass
+
+        # In your extension's setup():
+        register_image_processor(my_dark_processor, position='dark')
+
+    Note:
+        The custom handler receives ALL ``build-finished`` calls, including
+        when ``exception`` is not None (build failed), when the builder is
+        not LaTeX, or when dark mode / adaptation is inactive. The handler
+        must perform its own guard checks. See the example above.
+    """
+    if not callable(fn):
+        raise TypeError(
+            f"register_image_processor: fn must be callable, got {type(fn).__name__}"
+        )
+    if position not in _VALID_IMAGE_PROCESSOR_POSITIONS:
+        raise ValueError(
+            f"register_image_processor: invalid position '{position}'. "
+            f"Must be one of: {sorted(_VALID_IMAGE_PROCESSOR_POSITIONS)}"
+        )
+    _image_processor_registry[position] = fn
+
+
+def _reset_image_processor_registry():
+    """Clear the image processor registry. Used for test isolation."""
+    _image_processor_registry.clear()
+
+
+def _get_parallel_workers(config):
+    """Determine the number of parallel workers from config.
+
+    Reads ``doxtr_image_parallel_workers`` from the Sphinx config and returns
+    the effective worker count.
+
+    Args:
+        config: Sphinx config object.
+
+    Returns:
+        int: Number of workers to use. 1 means sequential (no pool overhead).
+
+    Rules:
+        - ``'auto'`` or ``0``: ``min(os.cpu_count() or _PARALLEL_FALLBACK_CPU_COUNT, _PARALLEL_MAX_AUTO_WORKERS)``
+        - ``1``: Sequential processing (no pool).
+        - ``N > 1``: Use N workers (capped at no maximum — user's choice).
+    """
+    val = getattr(config, 'doxtr_image_parallel_workers', 'auto')
+    if val == 'auto' or val == 0:
+        return min(os.cpu_count() or _PARALLEL_FALLBACK_CPU_COUNT, _PARALLEL_MAX_AUTO_WORKERS)
+    return max(1, int(val))
 
 
 def _resolve_dark_asset(path: str) -> str:
@@ -83,6 +175,28 @@ try:
 except ImportError:
     _PIL_Image = None  # type: ignore[assignment]
     _PIL_AVAILABLE = False
+
+# --- Parallel processing constants ---
+# Maximum number of workers when 'auto' is selected. Caps parallelism to avoid
+# diminishing returns from process spawn overhead and memory pressure.
+_PARALLEL_MAX_AUTO_WORKERS: int = 8
+
+# Fallback CPU count when os.cpu_count() returns None (e.g., in containers).
+_PARALLEL_FALLBACK_CPU_COUNT: int = 4
+
+# Minimum number of work items required to justify pool overhead.
+# Batches at or below this size are processed sequentially regardless of worker config.
+_PARALLEL_MIN_BATCH_SIZE: int = 2
+
+
+def _get_exclude_patterns(config):
+    """Get the merged exclude patterns list from config.
+
+    Reads doxtr_image_exclude_patterns (primary) with fallback to
+    the deprecated doxtr_dark_image_exclude_patterns.
+    """
+    return list(getattr(config, 'doxtr_image_exclude_patterns', None)
+                or getattr(config, 'doxtr_dark_image_exclude_patterns', []))
 
 
 def _hex_to_rgb_tuple(hex_color: str) -> tuple:
@@ -456,6 +570,11 @@ _ADAPT_TRANSPARENT_BORDER_THRESHOLD: float = 0.5
 def _iter_processable_images(app, exclude_patterns=None):
     """Yield (filename, dest_path, img) for each processable image in outdir.
 
+    .. deprecated::
+        Superseded by ``_iter_processable_image_paths`` for the parallel
+        processing pipeline. Retained for backward compatibility with child
+        themes that may import it directly. Will be removed in v2.0.0.
+
     Shared iteration logic for both dark-mode and page-adaptation image pipelines.
     Skips images that:
     - Have an extension not in _RECOLOUR_EXTENSIONS
@@ -744,6 +863,216 @@ def _replace_background_with_color(path: str, page_rgb: tuple, fuzz: int, img=No
     return True
 
 
+# --- PARALLEL IMAGE PROCESSING WORKER FUNCTIONS ---
+# These are top-level module functions (not closures or lambdas) so they can be
+# pickled by ProcessPoolExecutor. They accept only serializable arguments —
+# no `app`, no PIL Image objects. Workers open images from disk themselves.
+
+
+def _process_single_dark_image(dest_path, filename, recolor_grayscale, invert_color,
+                               threshold, text_rgb, page_rgb):
+    """Process a single image for dark mode. Runs in a worker process.
+
+    Determines whether the image is grayscale or color, then applies the
+    appropriate dark-mode transformation:
+    - Grayscale: remap black→text, white→page background
+    - Color + too bright: invert HSL lightness
+
+    Args:
+        dest_path: Absolute path to the image file (modified in-place).
+        filename: Basename of the image (for error reporting).
+        recolor_grayscale: Whether to recolour grayscale images.
+        invert_color: Whether to invert lightness of bright color images.
+        threshold: Brightness threshold for color image inversion.
+        text_rgb: (R, G, B) tuple for dark text colour.
+        page_rgb: (R, G, B) tuple for dark page background.
+
+    Returns:
+        dict with keys:
+            - 'filename': str — the image filename
+            - 'success': bool — whether processing completed without error
+            - 'error': str — error message (only when success=False)
+    """
+    try:
+        from PIL import Image as _Image
+        img = _Image.open(dest_path)
+
+        if _is_grayscale_sample(img):
+            if recolor_grayscale:
+                _maybe_recolour_image(dest_path, text_rgb, page_rgb, img=img)
+        else:
+            if invert_color and _is_too_bright(img, threshold):
+                _invert_color_image_lightness(dest_path, img=img,
+                                             text_rgb=text_rgb, page_rgb=page_rgb)
+        return {'filename': filename, 'success': True}
+    except Exception as e:
+        return {'filename': filename, 'success': False, 'error': str(e)}
+
+
+def _process_single_adapt_image(dest_path, filename, page_rgb, fuzz):
+    """Process a single image for page background adaptation. Runs in a worker process.
+
+    Opens the image, checks for transparent backgrounds, then replaces
+    edge-connected white background pixels with the page background color.
+
+    Args:
+        dest_path: Absolute path to the image file (modified in-place).
+        filename: Basename of the image (for error reporting).
+        page_rgb: (R, G, B) tuple for the target page background color.
+        fuzz: White detection tolerance (0–255).
+
+    Returns:
+        dict with keys:
+            - 'filename': str — the image filename
+            - 'success': bool — whether processing completed without error
+            - 'modified': bool — whether the image was actually changed
+              (only present when success=True)
+            - 'error': str — error message (only when success=False)
+    """
+    try:
+        from PIL import Image as _Image
+        img = _Image.open(dest_path)
+        modified = _replace_background_with_color(dest_path, page_rgb, fuzz, img=img)
+        return {'filename': filename, 'success': True, 'modified': modified}
+    except Exception as e:
+        return {'filename': filename, 'success': False, 'error': str(e)}
+
+
+def _dispatch_parallel(work_items, worker_fn, worker_args_fn, workers, pipeline_name):
+    """Dispatch work items to a ProcessPoolExecutor or run sequentially.
+
+    Shared dispatch logic for both dark-mode and page-adaptation pipelines.
+    Handles the decision between parallel and sequential execution, logging,
+    error reporting, and result collection.
+
+    Args:
+        work_items: List of (filename, dest_path) tuples to process.
+        worker_fn: The top-level worker function to call per item.
+        worker_args_fn: Callable that takes (dest_path, filename) and returns
+            the full args tuple to pass to worker_fn.
+        workers: Number of parallel workers (1 = sequential).
+        pipeline_name: Human-readable name for log messages (e.g. 'dark mode').
+
+    Returns:
+        int: Count of successfully processed images (for adapt pipeline,
+             count of images that were actually modified).
+    """
+    if not work_items:
+        return 0
+
+    processed = 0
+    errors = 0
+
+    if workers <= 1 or len(work_items) <= _PARALLEL_MIN_BATCH_SIZE:
+        # Sequential: no pool overhead for small batches or single-worker config
+        for filename, dest_path in work_items:
+            result = worker_fn(*worker_args_fn(dest_path, filename))
+            if result['success']:
+                # For adapt pipeline, count only modified images
+                if 'modified' in result:
+                    if result['modified']:
+                        processed += 1
+                else:
+                    processed += 1
+            else:
+                logger.warning(
+                    f"[Doxtr Core] {pipeline_name} image processing failed for "
+                    f"{result['filename']}: {result['error']}"
+                )
+    else:
+        logger.info(
+            f'[Doxtr Core] Processing {len(work_items)} images with '
+            f'{workers} parallel workers ({pipeline_name})'
+        )
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(worker_fn, *worker_args_fn(dest_path, filename)): filename
+                for filename, dest_path in work_items
+            }
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                except Exception as e:
+                    # Worker process crashed (OOM, segfault, BrokenProcessPool)
+                    filename = futures[future]
+                    logger.warning(
+                        f'[Doxtr Core] {pipeline_name} worker crashed for '
+                        f'{filename}: {e}'
+                    )
+                    errors += 1
+                    continue
+                if result['success']:
+                    if 'modified' in result:
+                        if result['modified']:
+                            processed += 1
+                    else:
+                        processed += 1
+                else:
+                    logger.warning(
+                        f"[Doxtr Core] {pipeline_name} image processing failed for "
+                        f"{result['filename']}: {result['error']}"
+                    )
+
+    return processed
+
+
+def _iter_processable_image_paths(app, exclude_patterns=None):
+    """Yield (filename, dest_path) for each processable image in outdir.
+
+    Like _iter_processable_images but does NOT open the image file. Used by
+    the parallel dispatch path where workers open images themselves in separate
+    processes.
+
+    Skips images that:
+    - Have an extension not in _RECOLOUR_EXTENSIONS
+    - Were substituted with a _dark variant (app.env._doxtr_dark_substituted)
+    - Were opted out via no-auto-image-adapt class (app.env._doxtr_image_skip)
+    - Match an exclude pattern (fnmatch glob against filename)
+    - Are not regular files
+
+    Args:
+        app: Sphinx application object.
+        exclude_patterns: List of glob patterns to exclude (default: empty).
+
+    Yields:
+        Tuples of (filename, dest_path) for each processable image.
+    """
+    if exclude_patterns is None:
+        exclude_patterns = []
+
+    dark_substituted = getattr(app.env, '_doxtr_dark_substituted', set())
+    image_skip = getattr(app.env, '_doxtr_image_skip', set())
+
+    dark_sub_basenames = {os.path.basename(uri) for uri in dark_substituted}
+    skip_basenames = {os.path.basename(uri) for uri in image_skip}
+
+    outdir = app.outdir
+    try:
+        outdir_files = os.listdir(outdir)
+    except OSError:
+        return
+
+    for filename in outdir_files:
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in _RECOLOUR_EXTENSIONS:
+            continue
+
+        if filename in dark_sub_basenames:
+            continue
+
+        if filename in skip_basenames:
+            continue
+
+        if any(fnmatch.fnmatch(filename, pat) for pat in exclude_patterns):
+            continue
+
+        dest_path = os.path.join(outdir, filename)
+        if not os.path.isfile(dest_path):
+            continue
+
+        yield filename, dest_path
+
+
 def _adapt_image_backgrounds(app, exception):
     """Replace white image backgrounds with the page background color.
 
@@ -762,7 +1091,16 @@ def _adapt_image_backgrounds(app, exception):
     - The filename matches a pattern in doxtr_image_exclude_patterns
     - The extension is not in _RECOLOUR_EXTENSIONS
     - Dark mode is active (dark mode has its own image pipeline)
+
+    Processing is parallelised via ProcessPoolExecutor when the image count
+    exceeds 2 and ``doxtr_image_parallel_workers`` is not 1. Each image is
+    processed independently in a worker process. Set workers to 1 to force
+    sequential processing (useful for debugging).
     """
+    # Allow child themes to replace the entire adapt pipeline
+    if _image_processor_registry.get('adapt'):
+        return _image_processor_registry['adapt'](app, exception)
+
     if exception:
         return
     if app.builder.name != 'latex':
@@ -795,21 +1133,23 @@ def _adapt_image_backgrounds(app, exception):
     page_rgb = _hex_to_rgb_tuple(page_bg)
     fuzz = int(getattr(app.config, 'doxtr_adapt_image_white_fuzz', _ADAPT_IMAGE_WHITE_FUZZ_DEFAULT))
 
-    exclude_patterns = list(getattr(app.config, 'doxtr_image_exclude_patterns', None)
-                            or getattr(app.config, 'doxtr_dark_image_exclude_patterns', []))
+    exclude_patterns = _get_exclude_patterns(app.config)
 
-    processed_count = 0
+    # Collect work items without opening images (workers do that themselves)
+    work_items = list(_iter_processable_image_paths(app, exclude_patterns))
 
-    for filename, dest_path, img in _iter_processable_images(app, exclude_patterns):
-        try:
-            if _replace_background_with_color(dest_path, page_rgb, fuzz, img=img):
-                processed_count += 1
-        except Exception as e:
-            logger.warning(
-                f'[Doxtr Core] Image background adaptation failed for '
-                f'{filename}: {e}'
-            )
-            logger.debug('[Doxtr Core] Image adaptation traceback:', exc_info=True)
+    if not work_items:
+        return
+
+    workers = _get_parallel_workers(app.config)
+
+    def _adapt_args(dest_path, filename):
+        return (dest_path, filename, page_rgb, fuzz)
+
+    processed_count = _dispatch_parallel(
+        work_items, _process_single_adapt_image, _adapt_args, workers,
+        'page adaptation'
+    )
 
     if processed_count > 0:
         logger.info(
@@ -941,6 +1281,11 @@ def _recolour_dark_images(app, exception):
     - The filename matches a pattern in doxtr_image_exclude_patterns
     - The extension is not in _RECOLOUR_EXTENSIONS (SVG, PDF, EPS excluded)
 
+    Processing is parallelised via ProcessPoolExecutor when the image count
+    exceeds 2 and ``doxtr_image_parallel_workers`` is not 1. Each image is
+    processed independently in a worker process. Set workers to 1 to force
+    sequential processing (useful for debugging).
+
     .. note:: Future optimisation opportunity
        This function currently processes ALL white pixels uniformly (grayscale
        remap) or ALL bright pixels (lightness inversion). A flood-fill
@@ -950,6 +1295,10 @@ def _recolour_dark_images(app, exception):
        as a future enhancement since the current approach works well for the
        full-inversion dark mode use case.
     """
+    # Allow child themes to replace the entire dark pipeline
+    if _image_processor_registry.get('dark'):
+        return _image_processor_registry['dark'](app, exception)
+
     if exception:
         return
     if not to_bool(getattr(app.config, 'doxtr_dark_mode', False)):
@@ -977,8 +1326,7 @@ def _recolour_dark_images(app, exception):
         return
 
     threshold = float(getattr(app.config, 'doxtr_dark_image_brightness_threshold', _DARK_BRIGHTNESS_DEFAULT))
-    exclude_patterns = list(getattr(app.config, 'doxtr_image_exclude_patterns', None)
-                            or getattr(app.config, 'doxtr_dark_image_exclude_patterns', []))
+    exclude_patterns = _get_exclude_patterns(app.config)
 
     # Guard against None: doxtr_dark_text_color is None until config_inited runs
     dark_text = getattr(app.config, 'doxtr_dark_text_color', '#DBDBDB') or '#DBDBDB'
@@ -988,23 +1336,19 @@ def _recolour_dark_images(app, exception):
     text_rgb = _hex_to_rgb_tuple(dark_text)
     page_rgb = _hex_to_rgb_tuple(dark_page)
 
-    for filename, dest_path, img in _iter_processable_images(app, exclude_patterns):
-        try:
-            if _is_grayscale_sample(img):
-                # Grayscale path: remap black→text, white→page background.
-                # JPEG source images are re-saved with PIL default quality (75) —
-                # minor lossy re-encode. For lossless diagrams, use PNG sources.
-                # img is confirmed grayscale — pass pre-opened image to skip
-                # the redundant internal grayscale re-check in _maybe_recolour_image.
-                if recolor_grayscale:
-                    _maybe_recolour_image(dest_path, text_rgb, page_rgb, img=img)
-            else:
-                # Color path: invert lightness if image is too bright
-                if invert_color and _is_too_bright(img, threshold):
-                    _invert_color_image_lightness(dest_path, img=img, text_rgb=text_rgb, page_rgb=page_rgb)
-        except Exception as e:
-            logger.warning(
-                f'[Doxtr Core] Dark mode image processing failed for '
-                f'{filename}: {e}'
-            )
-            logger.debug('[Doxtr Core] Image processing traceback:', exc_info=True)
+    # Collect work items without opening images (workers do that themselves)
+    work_items = list(_iter_processable_image_paths(app, exclude_patterns))
+
+    if not work_items:
+        return
+
+    workers = _get_parallel_workers(app.config)
+
+    def _dark_args(dest_path, filename):
+        return (dest_path, filename, recolor_grayscale, invert_color,
+                threshold, text_rgb, page_rgb)
+
+    _dispatch_parallel(
+        work_items, _process_single_dark_image, _dark_args, workers,
+        'dark mode'
+    )

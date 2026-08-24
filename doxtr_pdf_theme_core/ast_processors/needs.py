@@ -10,14 +10,28 @@ from ..latex_escape import esc_latex
 __all__ = ['process_needs_ast']
 
 
+def _make_need_label(docname, label_id):
+    """Build a single \\phantomsection\\label for a need ID.
+
+    Uses \\detokenize to safely handle special LaTeX characters in
+    docnames and IDs without requiring manual escaping.
+    """
+    qualified = f"{docname}:{label_id}" if docname else label_id
+    return f"\\phantomsection\\label{{\\detokenize{{{qualified}}}}}"
+
+
 def process_needs_ast(app, doctree, docname):
     """Process sphinx-needs nodes and wrap them in styled LaTeX environments.
 
     Transforms nodes with 'need' or 'need_node' classes into LaTeX
     doxtrneedboxrouter environments with proper metadata and content
-    separation.
+    separation.  Emits docname-qualified ``\\label`` commands so that
+    cross-document hyperref references resolve correctly.
 
     Skipped if ``doxtr_enable_needs_processor`` is False.
+
+    Compatible with sphinx-needs 1.x through 8.x (reads ``_needs_all_needs``
+    with fallback to the legacy ``needs_all_needs`` attribute).
 
     Args:
         app: The Sphinx application object.
@@ -28,7 +42,10 @@ def process_needs_ast(app, doctree, docname):
         return
     if getattr(app.builder, 'format', '') != 'latex':
         return
-    
+
+    # Get the needs data dictionary (sphinx-needs 8.x uses _needs_all_needs)
+    needs_data = getattr(app.env, '_needs_all_needs', None) or getattr(app.env, 'needs_all_needs', None) or {}
+
     for node in list(doctree.traverse(nodes.Element)):
         classes = node.get('classes', [])
         if 'need' not in classes and 'need_node' not in classes and node.tagname != 'need':
@@ -65,15 +82,22 @@ def process_needs_ast(app, doctree, docname):
                 need_type = c[len('needs_type_'):].lower()
                 break
 
-        # Get title from needs environment if available
-        title = ''
-        if hasattr(app.env, 'needs_all_needs') and nid in app.env.needs_all_needs:
-            title = app.env.needs_all_needs[nid].get('title', '')
-            if need_type == 'generic':
-                need_type = app.env.needs_all_needs[nid].get('type', 'generic').lower()
+        # Look up need metadata once for title, type, and docname
+        need_info = needs_data.get(nid, {})
+        title = need_info.get('title', '')
+        if need_type == 'generic':
+            need_type = need_info.get('type', 'generic').lower()
 
         safe_type = esc_latex(need_type)
-        labels_tex = "".join([f"\\phantomsection\\label{{\\detokenize{{{i}}}}}" for i in unique_ids])
+
+        # Determine the docname for this need to generate properly qualified
+        # LaTeX labels.  Sphinx's LaTeX writer prefixes all labels with
+        # "docname:" via its curfilestack mechanism, but since we emit raw
+        # LaTeX here we must do it ourselves.
+        need_docname = need_info.get('docname', '') or ''  # guard against None stored as value
+        labels_tex = "".join(
+            _make_need_label(need_docname, i) for i in unique_ids
+        )
 
         wrapper = nodes.container(classes=['doxtr-flat-need'])
         wrapper.append(nodes.raw('', f'\n{labels_tex}\n\\begin{{doxtrneedboxrouter}}{{{safe_type}}}{{{esc_latex(nid)}: {esc_latex(title)}}}\n', format='latex'))

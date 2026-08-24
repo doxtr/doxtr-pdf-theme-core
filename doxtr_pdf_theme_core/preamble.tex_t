@@ -1,5 +1,25 @@
+%% Load scrhack to patch float.sty's deprecated \float@addtolists interface.
+%% Sphinx's sphinx.sty loads the 'float' package which uses the old interface
+%% incompatible with KOMA-Script's tocbasic system.  scrhack provides the
+%% compatibility bridge, eliminating the scrbook warning.
+\usepackage{scrhack}
 \usepackage{calc}
-\usepackage{pdflscape}
+<% if doxtr_landscape_package %>\usepackage{<< doxtr_landscape_package >>}<% endif %>
+
+%% ----------------------------------------------------
+%% TABLE CELL OVERFLOW SAFETY NET
+%% Ensure etoolbox is available for \AtBeginEnvironment hooks.
+%% (Implicitly loaded via tcolorbox, but declared explicitly for robustness.)
+%% ----------------------------------------------------
+\makeatletter
+\@ifpackageloaded{etoolbox}{}{\usepackage{etoolbox}}
+\makeatother
+
+%% Allow emergency stretching in table cells to prevent overflow
+%% when AST-level processing misses edge cases.
+\AtBeginEnvironment{tabulary}{\emergencystretch=1em}
+\AtBeginEnvironment{longtable}{\emergencystretch=1em}
+\AtBeginEnvironment{tabular}{\emergencystretch=1em}
 
 %% ----------------------------------------------------
 %% AUTO-LANDSCAPE ENVIRONMENT (legacy, width-based)
@@ -71,6 +91,8 @@
 \newlength{\doxtr@selectedpageheight}
 \newlength{\doxtr@selectedtextwidth}
 \newlength{\doxtr@marginsize}
+%% Margin for landscape pages (each side).  Adjust in child themes via
+%% \setlength{\doxtr@marginsize}{...} injected through register_preamble_hook.
 \setlength{\doxtr@marginsize}{15mm}
 \newcounter{doxtr@colcount}
 \newlength{\doxtr@savedpagewidth}
@@ -83,7 +105,7 @@
 
 \newcommand{\doxtr@selectpagesize}{%
   %% Guard: ensure mincolwidth is positive to prevent infinite loops.
-  %% Falls back to the same default as line 57 (\setlength{\doxtr@mincolwidth}{22mm}).
+  %% Falls back to the same initial default (\setlength{\doxtr@mincolwidth}{22mm}).
   \ifdim\doxtr@mincolwidth<1pt\relax
     \setlength{\doxtr@mincolwidth}{22mm}%
   \fi
@@ -169,6 +191,30 @@
 \newlength{\doxtr@saved@headsep}
 \newlength{\doxtr@saved@topskip}
 
+%% Deferred pagegoal resynchronization command.
+%% Called via \aftergroup at the end of doxtradaptivelandscape so that
+%% it executes after the environment's implicit group has fully closed.
+%% This ensures that TeX's output routine and tcolorbox's breakable
+%% algorithm see the correct \pagegoal on the first page after a
+%% landscape-to-portrait transition.
+%%
+%% Without this, \pagegoal may retain a stale value from the landscape
+%% geometry, causing breakable tcolorboxes (e.g. sphinx-needs cards) to
+%% overestimate available vertical space and overflow into the footer.
+\newcommand{\doxtr@resync@pagegoal}{%
+  %% \@colht is the canonical "full column height" that the output
+  %% routine uses to initialize \pagegoal at the top of each page.
+  %% Setting it and \vsize here ensures consistency even if the output
+  %% routine has not yet fired for the current page.
+  \global\@colht=\textheight\relax
+  \global\vsize=\textheight\relax
+  %% If we are at the top of a fresh page (\pagetotal near zero),
+  %% explicitly set \pagegoal so tcolorbox sees correct available space.
+  \ifdim\pagetotal<1pt\relax
+    \pagegoal=\textheight\relax
+  \fi
+}
+
 \newenvironment{doxtradaptivelandscape}[1][0]{%
   %% #1 = column count (passed from the AST processor)
   \setcounter{doxtr@colcount}{#1}%
@@ -210,7 +256,7 @@
   %% Sync \vsize and \@colht so the output routine (and longtable's
   %% page-break calculations via \pagegoal) respect the reduced page
   %% height on ALL continuation pages, not just the first.
-  \global\@colht=\textheight
+  \global\@colht=\textheight\relax
   \global\vsize=\textheight\relax
   %% Adjust margins (TeX origin is 1in from each edge)
   \global\headheight=0pt\relax
@@ -247,6 +293,18 @@
   \global\headheight=\doxtr@saved@headheight\relax
   \global\headsep=\doxtr@saved@headsep\relax
   \global\topskip=\doxtr@saved@topskip\relax
+  %% AFTERGROUP PAGEGOAL SYNCHRONIZATION (Option C)
+  %% After the environment group closes, TeX resumes typesetting on a
+  %% fresh page. However, the output routine may have cached a stale
+  %% \pagegoal from the landscape geometry. tcolorbox's breakable
+  %% algorithm queries \pagegoal - \pagetotal to decide whether to
+  %% break; a stale value can cause it to overestimate available space,
+  %% resulting in content overflowing into the footer.
+  %%
+  %% \aftergroup defers the resync until after the environment's
+  %% implicit group closes, ensuring the output routine's state is
+  %% updated in the correct context for subsequent content.
+  \aftergroup\doxtr@resync@pagegoal
 }
 
 %% ----------------------------------------------------
@@ -282,6 +340,48 @@
 \usepackage{tcolorbox}
 \tcbuselibrary{skins, hooks, breakable}
 \usepackage{varwidth}
+<% if doxtr_suppress_warnings %>
+%% --- Warning suppression (doxtr_suppress_warnings = True) ---
+%% Suppress varwidth "Failed to reprocess" warnings.
+%% All doxtr varwidth usage is inside TikZ nodes where the two-pass
+%% algorithm always fails (TikZ captures content specially), but output
+%% is correct since varwidth falls back to the first-pass result.
+\usepackage{silence}
+\WarningFilter{varwidth}{Failed to reprocess}
+%% Defensive: the split RedeclareSectionCommands (line ~870) fixes the root cause,
+%% but this filter catches edge cases from child themes that may re-add tocdynindent.
+\WarningFilter{tocbasic}{dynindent}
+%% Safety net for user-configured footheight values that are too small for their
+%% footer content (logo + page number). The 30pt core default should suffice.
+\WarningFilter{scrlayer-scrpage}{footheight to low}
+%% Suppress undefined font shape warnings (e.g. TU/Rye(0)/b/n, TU/Alice(0)/b/n).
+%% Display fonts (Rye, Alice, Kranky, StoryScript, etc.) ship only Regular weight.
+%% KOMA-Script headings and tcolorbox titles apply \bfseries internally; LaTeX
+%% falls back to Regular, which is the intended visual for decorative fonts.
+\WarningFilter{latexfont}{Font shape}
+%% Suppress overfull/underfull hbox and vbox messages globally.
+%% These are unavoidable in large auto-generated documents with tables,
+%% code blocks, and long URLs.  The output is still correct.
+%% Global settings suppress underfull reporting:
+\hbadness=10000
+\vbadness=10000
+\hfuzz=\maxdimen
+\vfuzz=\maxdimen
+%% For LuaTeX: use hpack_quality/vpack_quality callbacks to suppress overfull
+%% warnings from ALL scopes (including inner groups like tcolorbox/longtable
+%% that reset \hfuzz).  Returning nil from the callback suppresses the message.
+%% Theme authors can remove these filters via:
+%%   \directlua{luatexbase.remove_from_callback('hpack_quality', 'doxtr.suppress_hbox_warnings')}
+%%   \directlua{luatexbase.remove_from_callback('vpack_quality', 'doxtr.suppress_vbox_warnings')}
+\directlua{
+  luatexbase.add_to_callback('hpack_quality', function(incident, detail, head, first, last)
+    return nil
+  end, 'doxtr.suppress_hbox_warnings')
+  luatexbase.add_to_callback('vpack_quality', function(incident, detail, head, first, last)
+    return nil
+  end, 'doxtr.suppress_vbox_warnings')
+}
+<% endif %>
 \usepackage{xpatch}
 % Load the relsize package to enable decimal scaling used in doxtr_containers themes
 % Let's us use: r'\relscale{1.2}' to scale fonts
@@ -321,9 +421,11 @@
 %% Starred commands mirror each other perfectly on both plain and scrheadings styles
 \ofoot*{\pagemark}
 
-%% --- Dark Mode: Page Background and Body Text Color ---
-%% When dark mode is active or page adaptation requires a non-white page,
-%% set the page background color and adjust the default body text color.
+%% --- Page Background and Body Text Color ---
+%% Always emit pagecolor/textcolor for structural consistency between light
+%% and dark mode builds (prevents page-count drift from whatsit node differences).
+%% In light mode: white page (#FFFFFF) + black text (#000000).
+%% In dark mode: inverted page + light text.
 <% if doxtr_emit_pagecolor %>
 \definecolor{ddpagebackground}{rgb}{<< doxtr_page_bg_cmyk >>}
 \definecolor{ddbodytextcolor}{rgb}{<< doxtr_body_text_color_cmyk >>}
@@ -825,7 +927,10 @@
 %% Use KOMA-Script's dynamic width feature so the TOC
 %% automatically expands to fit the widest number.
 %% ----------------------------------------------------
-\RedeclareSectionCommands[tocdynnumwidth,tocdynindent]{chapter,section,subsection,subsubsection}
+%% Enable dynamic numwidth for ALL levels (prevents number/title overlap in deep nesting)
+\RedeclareSectionCommands[tocdynnumwidth]{chapter,section,subsection,subsubsection}
+%% Enable dynamic indent only for levels that have a parent (chapter has indent=0, no parent)
+\RedeclareSectionCommands[tocdynindent]{section,subsection,subsubsection}
 \renewcommand\sectionlinesformat[4]{%
   \needspace{.05\textheight}%
   \@ifundefined{doxtr@align@#1}{%

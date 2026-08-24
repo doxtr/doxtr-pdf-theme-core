@@ -68,9 +68,9 @@ DOXTR_GLOBALS = {
         # --- Basic PDF Geometry & Meta ---
         'show_release': True,               # Whether to show the release version on the title page
         'headsep': '8mm',                   # Space between header and text body
-        'footskip': '10mm',                 # Space between text body and footer
+        'footskip': '14mm',                 # Space between text body and footer (accommodates 1.5em logo + clearance)
         'headheight': '18pt',               # Height of the header line
-        'footheight': '25pt',               # Height of the footer line
+        'footheight': '30pt',               # Height of the footer line
         
         # --- Lists & Indices ---
         'show_list_of_figures': False,      # Print List of Figures right before the Index
@@ -330,7 +330,7 @@ DOXTR_MICROTYPE = {
     'enabled': True,                    # Enable microtype (only active when draft mode is off)
     'protrusion': True,                 # Character protrusion (hanging punctuation)
     'expansion': True,                  # Font expansion (eliminates uneven word spacing)
-    'kerning': False,                   # Fine kerning for character pairs (pdftex-only in older microtype)
+    'kerning': True,                    # Fine kerning for character pairs (disabled automatically in draft mode)
     'stretch': 10,                      # Max stretch (percent)
     'shrink': 10,                       # Max shrink (percent)
     #
@@ -380,7 +380,7 @@ DOXTR_CONTAINERS = {
         'match_text_width': True,
         'title_icon': r'\faIcon{keyboard}',
         'title_font': 'Special Elite',
-        'title_font_size': r'\normalsize\bfseries',
+        'title_font_size': r'\normalsize',  # Special Elite has only Regular weight
         'title_color': '#484848',
         'title_font_color': '#F0F0E8',
         'title_icon_color': '#F0D890',
@@ -428,7 +428,7 @@ DOXTR_CONTAINERS = {
         'match_text_width': False,
         'title_icon': r'\faIcon{user}',
         'title_font': 'Alice',           # Whimsical 'Alice' font for the title
-        'title_font_size': r'\bfseries',
+        'title_font_size': r'\large',       # Alice has only Regular weight — \bfseries triggers undefined font shape warning
         'title_color': '#2A6B8B',        # Teal blue
         'title_font_color': '#FFFFFF',
         'title_icon_color': '#90F0F0',
@@ -459,7 +459,7 @@ DOXTR_CONTAINERS = {
         'match_text_width': False,
         'title_icon': r'\faIcon{hat-cowboy}',  # Cowboy hat icon for Wild West theme
         'title_font': 'Rye',             # Western-style 'Rye' font for the title
-        'title_font_size': r'\bfseries',
+        'title_font_size': r'\large',       # Rye has only Regular weight
         'title_color': '#8B4513',        # Saddle brown — classic Western leather
         'title_font_color': '#FFF8DC',   # Cornsilk — parchment/wanted poster feel
         'title_icon_color': '#DAA520',   # Goldenrod — sheriff badge gold
@@ -538,6 +538,27 @@ DOXTR_TABLES = {
                                            # (165mm textwidth → ~27mm/col average).
                                            # Lower for narrow page layouts; raise for wide
                                            # or landscape-by-default documents.
+        # --- Table Cell Overflow Protection (Phase 1) ---
+        # Regex patterns whose matches are wrapped in \mbox{} (never broken).
+        # Protect UUIDs, long URLs, and hex hashes from mid-token line breaks.
+        'nobreak_patterns': [
+            r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',  # UUID
+            r'https?://\S{20,}',  # Long URLs (20+ chars after scheme)
+            r'[0-9a-fA-F]{32,}',  # SHA-256/SHA-512 hex hashes
+        ],
+        # Characters at which non-protected values MAY be broken (zero-width break).
+        # Applied to table cell text that does not match a nobreak pattern.
+        'break_chars': '-/.:',
+        # --- Content-Aware Column Widths (Phase 2) ---
+        # Column width computation algorithm:
+        #   'minfloor': Each column gets at least its longest-word width,
+        #               remaining space distributed proportional to average
+        #               content length of wrappable columns.
+        #   'maxcontent': Each column width is proportional to its longest word.
+        'column_width_algorithm': 'minfloor',
+        # Enable/disable automatic column width recomputation.
+        # When False, Phase 2 is skipped entirely (early return).
+        'auto_colwidths': True,
     }
 }
 
