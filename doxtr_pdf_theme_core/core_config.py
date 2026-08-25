@@ -330,14 +330,14 @@ DOXTR_MICROTYPE = {
     'enabled': True,                    # Enable microtype (only active when draft mode is off)
     'protrusion': True,                 # Character protrusion (hanging punctuation)
     'expansion': True,                  # Font expansion (eliminates uneven word spacing)
-    'kerning': True,                    # Fine kerning for character pairs (disabled automatically in draft mode)
+    'kerning': False,                   # Fine kerning for character pairs (only works with pdfTeX, not LuaLaTeX)
     'stretch': 10,                      # Max stretch (percent)
     'shrink': 10,                       # Max shrink (percent)
     #
     # --- Compatibility note ---
-    # kerning requires microtype >= 2.6a for LuaTeX support.
-    # If your system has an older microtype package, leave kerning=False.
-    # To enable: set 'kerning': True in your conf.py doxtr_microtype.
+    # kerning is only supported by microtype with pdfTeX (pdftex 1.40+).
+    # It does NOT work with LuaLaTeX or XeLaTeX regardless of microtype version.
+    # To enable: set 'kerning': True in your conf.py doxtr_microtype (pdfTeX only).
     #
     # --- Advanced options (theme authors can override) ---
     # 'hanging_punctuation': True,       # Hanging punctuation on both sides

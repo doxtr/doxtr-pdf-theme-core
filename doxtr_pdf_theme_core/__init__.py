@@ -88,7 +88,7 @@ from .dark_file_swap import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -1898,8 +1898,8 @@ def _stage_build_and_render_preamble(app, config, ctx):
         template_vars['doxtr_microtype_enabled'] = mt_enabled and not draft_text_active
         template_vars['doxtr_microtype_protrusion'] = microtype.get('protrusion', True)
         template_vars['doxtr_microtype_expansion'] = microtype.get('expansion', True)
-        # Kerning is enabled by default but forced off in draft mode (fast iteration)
-        template_vars['doxtr_microtype_kerning'] = microtype.get('kerning', True) and not draft_text_active
+        # Kerning is disabled by default (incompatible with LuaLaTeX); forced off in draft mode regardless
+        template_vars['doxtr_microtype_kerning'] = microtype.get('kerning', False) and not draft_text_active
         template_vars['doxtr_microtype_stretch'] = microtype.get('stretch', 10)
         template_vars['doxtr_microtype_shrink'] = microtype.get('shrink', 10)
 
