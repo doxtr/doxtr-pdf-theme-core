@@ -1,13 +1,14 @@
 """
 conf.py overrides for testing Microtype feature — with draft mode ON.
-When draft mode is active, microtype should NOT be loaded.
+When draft mode is active, microtype should NOT be loaded at all.
+The document should still compile successfully.
 """
 
 doxtr_microtype = {
     'enabled': True,
     'protrusion': True,
     'expansion': True,
-    'kerning': True,
+    'kerning': False,
     'stretch': 10,
     'shrink': 10,
 }

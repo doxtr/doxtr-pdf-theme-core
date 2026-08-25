@@ -1554,19 +1554,40 @@ FEATURE_REGISTRY: dict[str, Feature] = {
     # =====================================================================
     "microtype": Feature(
         name="Microtype (Default)",
-        description="microtype loaded with default options when draft mode is OFF",
+        description="microtype loaded with default options when draft mode is OFF (kerning disabled for LuaLaTeX)",
         sub_tests=[
             FeatureSubTest(
                 name="microtype_enabled_default",
-                description="Default microtype options (protrusion + expansion on, kerning on for LuaTeX)",
+                description="Default microtype options (protrusion + expansion on, kerning OFF for LuaLaTeX compatibility)",
                 rst_file="microtype.rst",
                 conf_override="test_microtype.py",
                 expected_latex_markers=[
                     r"protrusion=true",
                     r"expansion=true",
-                    r"kerning=true",
+                    r"kerning=false",
                     r"stretch=10",
                     r"shrink=10",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+        ],
+        status=FeatureStatus.COMPLETE,
+    ),
+
+    # =====================================================================
+    # 13b. MICROTYPE KERNING OPT-IN (explicit kerning=True for pdfTeX)
+    # =====================================================================
+    "microtype_kerning_optin": Feature(
+        name="Microtype (Kerning Opt-In)",
+        description="microtype kerning can be explicitly enabled for pdfTeX users",
+        sub_tests=[
+            FeatureSubTest(
+                name="microtype_kerning_optin",
+                description="Kerning can be explicitly enabled (for pdfTeX users)",
+                rst_file="microtype.rst",
+                conf_override="test_microtype_kerning_optin.py",
+                expected_latex_markers=[
+                    r"kerning=true",
                 ],
                 status=FeatureStatus.COMPLETE,
             ),
@@ -1631,7 +1652,7 @@ FEATURE_REGISTRY: dict[str, Feature] = {
     # =====================================================================
     "microtype_draft": Feature(
         name="Microtype (Draft)",
-        description="microtype NOT loaded when draft mode is active",
+        description="microtype NOT loaded when draft mode is active; document compiles successfully",
         sub_tests=[
             FeatureSubTest(
                 name="microtype_disabled_with_draft",
@@ -1643,6 +1664,20 @@ FEATURE_REGISTRY: dict[str, Feature] = {
                 ],
                 assertions=[
                     "MICROTYPE_NOT_LOADED",
+                ],
+                status=FeatureStatus.COMPLETE,
+            ),
+            FeatureSubTest(
+                name="microtype_draft_document_compiles",
+                description="Document compiles successfully with draft mode ON (microtype disabled)",
+                rst_file="microtype.rst",
+                conf_override="test_microtype_draft.py",
+                expected_latex_markers=[
+                    r"AddToHook",
+                ],
+                assertions=[
+                    "MICROTYPE_NOT_LOADED",
+                    "COMPILATION_SUCCESS",
                 ],
                 status=FeatureStatus.COMPLETE,
             ),

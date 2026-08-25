@@ -1119,7 +1119,7 @@ doxtr_microtype = {
     'enabled': True,        # Master switch (also disabled automatically in draft mode)
     'protrusion': True,     # Hanging punctuation — characters protrude slightly into margin
     'expansion': True,      # Font expansion — eliminates uneven word spacing
-    'kerning': False,       # Fine character-pair kerning (requires microtype >= 2.6a for LuaTeX)
+    'kerning': False,       # Fine kerning (only works with pdfTeX, not LuaLaTeX/XeLaTeX)
     'stretch': 10,          # Maximum stretch percentage
     'shrink': 10,           # Maximum shrink percentage
 }
