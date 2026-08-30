@@ -472,23 +472,33 @@ def _inject_breaks_into_text(text: str, break_chars: str) -> list:
             result_nodes.append(nodes.Text(part))
             continue
         # Long token: inject \allowbreak after each break_char.
+        # We merge each text+\allowbreak pair into a single raw LaTeX node
+        # so Sphinx's writer does not insert newlines between them (which
+        # LaTeX would render as visible whitespace).
         segments = []
         current = []
         for ch in part:
             current.append(ch)
             if ch in break_chars:
-                # Flush current text, then add \allowbreak.
-                segments.append(('text', ''.join(current)))
-                segments.append(('break', r'\allowbreak{}'))
+                # Merge text + \allowbreak into one raw node.
+                escaped = esc_latex(''.join(current))
+                segments.append(escaped + r'\allowbreak{}')
                 current = []
         if current:
-            segments.append(('text', ''.join(current)))
-
-        for seg_type, seg_val in segments:
-            if seg_type == 'text':
-                result_nodes.append(nodes.Text(seg_val))
+            if segments:
+                # Trailing segment after at least one break: escape and
+                # merge into the same raw node so no newline appears
+                # between the last \allowbreak and the remaining text.
+                segments.append(esc_latex(''.join(current)))
             else:
-                result_nodes.append(nodes.raw('', seg_val, format='latex'))
+                # No break chars found at all: keep as a Text node so
+                # Sphinx's LaTeX writer applies its full escaping
+                # (sphinxhyphen, etc.).
+                result_nodes.append(nodes.Text(''.join(current)))
+        if segments:
+            result_nodes.append(nodes.raw(
+                '', ''.join(segments), format='latex'
+            ))
     return result_nodes
 
 

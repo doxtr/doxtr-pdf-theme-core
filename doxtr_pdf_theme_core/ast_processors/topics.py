@@ -14,6 +14,7 @@ LaTeX writer to handle (bullet lists, cross-references, math, figures, etc.).
 from docutils import nodes
 
 from ..latex_escape import esc_latex
+from ._helpers import make_pagegoal_cap_node
 
 __all__ = ['process_topics_ast']
 
@@ -80,6 +81,9 @@ def process_topics_ast(app, doctree, docname):
 
         # Wrapping pattern: keep children in doctree for Sphinx's LaTeX writer
         wrapper = nodes.container(classes=[f'doxtr-{env_name}'])
+        # Defense-in-depth: cap \pagegoal before the breakable tcolorbox opens.
+        if getattr(app.config, 'doxtr_pagegoal_overflow_guard', True) is not False:
+            wrapper.append(make_pagegoal_cap_node())
         wrapper.append(nodes.raw(
             '', f'\n\\begin{{{env_name}}}{{{safe_title}}}\n', format='latex'
         ))

@@ -10,6 +10,7 @@ from sphinx.util import logging
 from ..latex_escape import esc_latex
 from ..core_config import VALID_RENDER_MODES, RenderMode, validate_render_mode
 from ..utils import _RE_SAFE_NAME
+from ._helpers import make_pagegoal_cap_node
 from .landscape import LANDSCAPE_CLASS
 
 __all__ = ['process_containers_ast', 'resolve_container_class']
@@ -177,6 +178,9 @@ def process_containers_ast(app, doctree, docname):
             post = ''
 
         wrapper = nodes.container(classes=['doxtr-flat-container'])
+        # Defense-in-depth: cap \pagegoal before the breakable tcolorbox opens.
+        if getattr(app.config, 'doxtr_pagegoal_overflow_guard', True) is not False:
+            wrapper.append(make_pagegoal_cap_node())
         wrapper.append(nodes.raw('', f'\n{pre}\\begin{{ddcontainer{safe_resolved_name}}}{begin_args}\n', format='latex'))
         wrapper.extend(node.children)
         wrapper.append(nodes.raw('', f'\n\\end{{ddcontainer{safe_resolved_name}}}\n{post}', format='latex'))

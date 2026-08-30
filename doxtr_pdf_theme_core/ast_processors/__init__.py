@@ -35,6 +35,8 @@ from .landscape import (
     FORCE_LANDSCAPE_CLASS,
     DEFAULT_MIN_COLUMNS,
 )
+from ._helpers import make_pagegoal_cap_node
+
 
 __all__ = [
     'process_containers_ast',
@@ -61,4 +63,5 @@ __all__ = [
     'NO_LANDSCAPE_CLASS',
     'FORCE_LANDSCAPE_CLASS',
     'DEFAULT_MIN_COLUMNS',
+    'make_pagegoal_cap_node',
 ]

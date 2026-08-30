@@ -548,7 +548,9 @@ DOXTR_TABLES = {
         ],
         # Characters at which non-protected values MAY be broken (zero-width break).
         # Applied to table cell text that does not match a nobreak pattern.
-        'break_chars': '-/.:',
+        # Note: '-' is excluded because Sphinx already converts it to
+        # \sphinxhyphen{} (-\kern\z@) which allows line breaks after hyphens.
+        'break_chars': '/.:',
         # --- Content-Aware Column Widths (Phase 2) ---
         # Column width computation algorithm:
         #   'minfloor': Each column gets at least its longest-word width,

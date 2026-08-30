@@ -40,7 +40,9 @@
 \tcbset{doxtrcodestyle<< lang >>/.style={colback=ddcodebg_<< lang >>, coltext=ddcodefg_<< lang >>, colframe=ddcodeborder_<< lang >>, colbacktitle=ddcodetitlebg_<< lang >>, coltitle=ddcodetitlefg_<< lang >>, boxrule=<< conf.border_width >>, fontupper=<% if conf.content_font %>\fontspec{<< conf.content_font >>}<% endif %><< conf.content_font_size >>, fonttitle=<% if conf.title_font %>\fontspec{<< conf.title_font >>}<% endif %><< conf.title_font_size >>, title={\vspace*{0.1ex}<< title_parts | join('') >>}}}
 <% endfor %>
 
-\tcolorboxenvironment{sphinxVerbatim}{enhanced, breakable, sharp corners=south, rounded corners=north, arc=4pt, boxsep=0pt, left=1em, right=1em, top=0.5em, bottom=0.5em, toptitle=0.5ex, bottomtitle=0.5ex, doxtrcodestylegeneric, doxtrcodestyle\ddCurrentCodeLang/.try}
+%% before= hook caps \pagegoal at \textheight to prevent breakable overflow
+%% into the footer when \vsize > \textheight (see preamble.tex_t PAGEGOAL CAP).
+\tcolorboxenvironment{sphinxVerbatim}{enhanced, breakable, sharp corners=south, rounded corners=north, arc=4pt, boxsep=0pt, left=1em, right=1em, top=0.5em, bottom=0.5em, toptitle=0.5ex, bottomtitle=0.5ex, before=\doxtr@cap@breakable@pagegoal, doxtrcodestylegeneric, doxtrcodestyle\ddCurrentCodeLang/.try}
 
 % Neutralize framed.sty's \MakeFramed inside sphinxVerbatim: tcolorbox handles
 % all framing and page-breaking via the breakable option above.

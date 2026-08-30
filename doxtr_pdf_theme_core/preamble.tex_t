@@ -210,10 +210,52 @@
   \global\vsize=\textheight\relax
   %% If we are at the top of a fresh page (\pagetotal near zero),
   %% explicitly set \pagegoal so tcolorbox sees correct available space.
+  %% Otherwise, delegate to \doxtr@cap@breakable@pagegoal for the
+  %% unconditional cap when \pagegoal exceeds \textheight (which can
+  %% happen when the output routine re-derives \pagegoal from a stale
+  %% \vsize on subsequent page breaks).
+  %% See also: \doxtr@cap@breakable@pagegoal (defined below).
   \ifdim\pagetotal<1pt\relax
     \pagegoal=\textheight\relax
+  \else
+    \doxtr@cap@breakable@pagegoal
   \fi
 }
+
+%% ----------------------------------------------------
+%% BREAKABLE TCOLORBOX PAGEGOAL CAP (defense-in-depth)
+%% Called at the start of every breakable tcolorbox router/environment
+%% to ensure \pagegoal does not exceed \textheight.  This guards
+%% against any desync between \vsize and \textheight that the
+%% root-cause fix (\AtBeginDocument vsize sync) or the landscape
+%% resync (\doxtr@resync@pagegoal) may not have caught, e.g.
+%% because a child theme or user code mutated geometry after
+%% document start.  Without this, tcolorbox's breakable algorithm
+%% overestimates available vertical space and overflows into the
+%% footer.  The guard is intentionally cheap (single \ifdim).
+%%
+%% Also invoked from \doxtr@resync@pagegoal (above) as the
+%% fallback branch when \pagetotal >= 1pt.
+%%
+%% \doxtrcapbreakablepagegoal is the public-facing wrapper for use
+%% in document body context (AST processor raw nodes) where @ is
+%% not a letter.  It delegates to the @-form so that child themes
+%% can override the behavior by redefining a single command.
+%% Internal code (preamble, routers) should use the @-form
+%% \doxtr@cap@breakable@pagegoal directly.
+%% ----------------------------------------------------
+<% if doxtr_pagegoal_overflow_guard %>
+\newcommand{\doxtr@cap@breakable@pagegoal}{%
+  \ifdim\pagegoal>\textheight\relax
+    \pagegoal=\textheight\relax
+    \global\@colht=\textheight\relax
+    \global\vsize=\textheight\relax
+  \fi
+}
+<% else %>
+\newcommand{\doxtr@cap@breakable@pagegoal}{}
+<% endif %>
+\newcommand{\doxtrcapbreakablepagegoal}{\doxtr@cap@breakable@pagegoal}
 
 \newenvironment{doxtradaptivelandscape}[1][0]{%
   %% #1 = column count (passed from the AST processor)
@@ -414,6 +456,30 @@
 <% endif %>
 <% if doxtr_headheight or doxtr_footheight %>
 \KOMAoptions{<% if doxtr_headheight %>headheight=<< doxtr_headheight >><% endif %><% if doxtr_headheight and doxtr_footheight %>, <% endif %><% if doxtr_footheight %>footheight=<< doxtr_footheight >><% endif %>}
+<% endif %>
+
+%% ----------------------------------------------------
+%% VSIZE / TEXTHEIGHT SYNCHRONIZATION
+%% KOMAoptions (above) may recalculate \textheight via typearea when
+%% headheight or footheight is changed.  However, \activateareas
+%% (which syncs \vsize = \textheight) only runs when \@atdocument
+%% is true, i.e. inside \begin{document}.  Because KOMAoptions is
+%% called in the preamble, \vsize retains its original (stale) value.
+%% tcolorbox's breakable algorithm derives available space from
+%% \pagegoal, which TeX sets from \vsize at the top of each page.
+%% A stale \vsize that exceeds \textheight causes breakable boxes
+%% to overestimate available space and overflow into the footer.
+%% This hook syncs all three output-routine registers at document
+%% start so every page begins with the correct \pagegoal.
+%% ----------------------------------------------------
+<% if doxtr_pagegoal_overflow_guard %>
+\makeatletter
+\AtBeginDocument{%
+  \global\vsize=\textheight\relax
+  \global\@colht=\textheight\relax
+  \global\@colroom=\textheight\relax
+}
+\makeatother
 <% endif %>
 
 \clearpairofpagestyles
@@ -1031,6 +1097,7 @@
 
 %% 4. Hook into Sphinx's master admonition macro with a Dynamic Environment Router
 \newenvironment{doxtradmonboxrouter}[2]{%
+    \doxtr@cap@breakable@pagegoal
     \def\myadmontype{#1}%
     \@ifundefined{ddadmonstylemap@\myadmontype}{\def\myadmontype{generic}}{}%
     % Look up the structural geometry mapped to this admonition type
@@ -1139,6 +1206,7 @@
 
 %% 4. The Dynamic Needs Router
 \newenvironment{doxtrneedboxrouter}[2]{%
+    \doxtr@cap@breakable@pagegoal
     \def\myneedtype{#1}%
     \@ifundefined{ddneedstylemap@\myneedtype}{\def\myneedtype{generic}}{}%
     \edef\mystyle{\csname ddneedstylemap@\myneedtype\endcsname}%

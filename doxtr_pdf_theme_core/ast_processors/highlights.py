@@ -7,6 +7,7 @@ replacing Sphinx's default quote indentation with a fully styled box.
 from docutils import nodes
 
 from ..latex_escape import esc_latex
+from ._helpers import make_pagegoal_cap_node
 
 __all__ = ['process_highlights_ast']
 
@@ -41,6 +42,9 @@ def process_highlights_ast(app, doctree, docname):
 
         # Build the LaTeX wrapper using our custom environment
         wrapper = nodes.container(classes=['doxtr-highlights'])
+        # Defense-in-depth: cap \pagegoal before the breakable tcolorbox opens.
+        if getattr(app.config, 'doxtr_pagegoal_overflow_guard', True) is not False:
+            wrapper.append(make_pagegoal_cap_node())
         wrapper.append(nodes.raw('', '\n\\begin{ddhighlightsbox}\n', format='latex'))
         wrapper.extend(node.children)
         wrapper.append(nodes.raw('', '\n\\end{ddhighlightsbox}\n', format='latex'))

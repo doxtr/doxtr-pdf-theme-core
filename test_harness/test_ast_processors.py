@@ -1418,3 +1418,167 @@ class TestCharWidthZeroGuard:
         # Should not raise ZeroDivisionError
         _compute_and_apply_widths(table, None, '-', app)
         assert table.get('doxtr_min_table_width_mm', 0) > 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: _helpers.py — make_pagegoal_cap_node (pagegoal-overflow-fix)
+# ---------------------------------------------------------------------------
+
+class TestMakePagegoalCapNode:
+    """Tests for the make_pagegoal_cap_node helper."""
+
+    def test_returns_raw_node(self):
+        """make_pagegoal_cap_node() returns a docutils raw node."""
+        from doxtr_pdf_theme_core.ast_processors._helpers import make_pagegoal_cap_node
+        node = make_pagegoal_cap_node()
+        assert isinstance(node, nodes.raw)
+
+    def test_format_is_latex(self):
+        """The raw node must have format='latex'."""
+        from doxtr_pdf_theme_core.ast_processors._helpers import make_pagegoal_cap_node
+        node = make_pagegoal_cap_node()
+        assert node['format'] == 'latex'
+
+    def test_contains_public_command(self):
+        """The node text must contain the public-facing command."""
+        from doxtr_pdf_theme_core.ast_processors._helpers import make_pagegoal_cap_node
+        node = make_pagegoal_cap_node()
+        assert r'\doxtrcapbreakablepagegoal' in node.astext()
+
+    def test_does_not_use_internal_at_form(self):
+        """AST nodes must use the public command, not the @-form."""
+        from doxtr_pdf_theme_core.ast_processors._helpers import make_pagegoal_cap_node
+        node = make_pagegoal_cap_node()
+        assert r'\doxtr@cap@breakable@pagegoal' not in node.astext()
+
+    def test_importable_from_package(self):
+        """make_pagegoal_cap_node should be importable from the ast_processors package."""
+        from doxtr_pdf_theme_core.ast_processors import make_pagegoal_cap_node
+        node = make_pagegoal_cap_node()
+        assert isinstance(node, nodes.raw)
+
+    def test_each_call_returns_fresh_node(self):
+        """Each call must return a distinct node object."""
+        from doxtr_pdf_theme_core.ast_processors._helpers import make_pagegoal_cap_node
+        n1 = make_pagegoal_cap_node()
+        n2 = make_pagegoal_cap_node()
+        assert n1 is not n2
+
+
+class TestPagegoalCapInContainers:
+    """Verify pagegoal cap node injection in the container processor."""
+
+    def test_container_wrapper_has_pagegoal_cap_before_begin(self):
+        """The first raw node in a container wrapper is the pagegoal cap."""
+        from doxtr_pdf_theme_core.ast_processors.containers import process_containers_ast
+
+        config = MockConfig(
+            doxtr_enable_container_processor=True,
+            doxtr_containers={
+                'mybox': {
+                    'title': 'My Box',
+                    'title_raw': False,
+                    'render_mode': 'tcolorbox',
+                },
+            },
+            doxtr_container_mapping={},
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+
+        container = nodes.container(classes=['mybox'])
+        container += nodes.paragraph(text='Hello world')
+        doc += container
+
+        process_containers_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        assert len(raw_nodes) >= 2, "Expected cap + begin/end raw LaTeX nodes"
+        assert r'\doxtrcapbreakablepagegoal' in raw_nodes[0].astext(), \
+            "First raw node should be the pagegoal cap"
+        assert r'\begin{ddcontainermybox}' in raw_nodes[1].astext(), \
+            "Second raw node should be the \\begin command"
+
+
+class TestPagegoalCapInHighlights:
+    """Verify pagegoal cap node injection in the highlights processor."""
+
+    def test_highlights_wrapper_has_pagegoal_cap_before_begin(self):
+        """The first raw node in a highlights wrapper is the pagegoal cap."""
+        from doxtr_pdf_theme_core.ast_processors.highlights import process_highlights_ast
+
+        config = MockConfig(
+            doxtr_enable_highlights_processor=True,
+            doxtr_highlights={},
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+
+        bq = nodes.block_quote(classes=['highlights'])
+        bq += nodes.paragraph(text='Key point 1')
+        doc += bq
+
+        process_highlights_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        assert len(raw_nodes) >= 2, "Expected cap + begin/end raw LaTeX nodes"
+        assert r'\doxtrcapbreakablepagegoal' in raw_nodes[0].astext(), \
+            "First raw node should be the pagegoal cap"
+        assert r'\begin{ddhighlightsbox}' in raw_nodes[1].astext(), \
+            "Second raw node should be the \\begin command"
+
+
+class TestPagegoalCapInTopics:
+    """Verify pagegoal cap node injection in the topics processor."""
+
+    def test_topic_wrapper_has_pagegoal_cap_before_begin(self):
+        """The first raw node in a topic wrapper is the pagegoal cap."""
+        from doxtr_pdf_theme_core.ast_processors.topics import process_topics_ast
+
+        config = MockConfig(
+            doxtr_enable_topics_processor=True,
+            doxtr_topic={'enabled': True},
+            doxtr_contents={'enabled': True},
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+
+        topic = nodes.topic()
+        topic += nodes.title(text='My Topic')
+        topic += nodes.paragraph(text='Topic body content')
+        doc += topic
+
+        process_topics_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        assert len(raw_nodes) >= 2, "Expected cap + begin/end raw LaTeX nodes"
+        assert r'\doxtrcapbreakablepagegoal' in raw_nodes[0].astext(), \
+            "First raw node should be the pagegoal cap"
+        assert r'\begin{doxtrtopic}' in raw_nodes[1].astext(), \
+            "Second raw node should be the \\begin command"
+
+    def test_contents_wrapper_has_pagegoal_cap_before_begin(self):
+        """The first raw node in a contents wrapper is the pagegoal cap."""
+        from doxtr_pdf_theme_core.ast_processors.topics import process_topics_ast
+
+        config = MockConfig(
+            doxtr_enable_topics_processor=True,
+            doxtr_topic={'enabled': True},
+            doxtr_contents={'enabled': True},
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+
+        topic = nodes.topic(classes=['contents'])
+        topic += nodes.title(text='Table of Contents')
+        topic += nodes.paragraph(text='Contents go here')
+        doc += topic
+
+        process_topics_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        assert len(raw_nodes) >= 2, "Expected cap + begin/end raw LaTeX nodes"
+        assert r'\doxtrcapbreakablepagegoal' in raw_nodes[0].astext(), \
+            "First raw node should be the pagegoal cap"
+        assert r'\begin{doxtrcontents}' in raw_nodes[1].astext(), \
+            "Second raw node should be the \\begin command"

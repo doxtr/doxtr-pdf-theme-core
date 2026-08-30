@@ -79,6 +79,7 @@ from .ast_processors import (
     NO_LANDSCAPE_CLASS,
     FORCE_LANDSCAPE_CLASS,
     DEFAULT_MIN_COLUMNS,
+    make_pagegoal_cap_node,
 )
 from .dark_file_swap import (
     swap_dark_sources,
@@ -88,7 +89,7 @@ from .dark_file_swap import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.5"
+__version__ = "1.1.6"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -1800,6 +1801,7 @@ def _stage_build_and_render_preamble(app, config, ctx):
         template_vars['doxtr_main_font_size'] = main_font_size_str
         template_vars['doxtr_main_font_size_pt'] = main_font_size_pt
         template_vars['doxtr_suppress_warnings'] = getattr(config, 'doxtr_suppress_warnings', True)
+        template_vars['doxtr_pagegoal_overflow_guard'] = getattr(config, 'doxtr_pagegoal_overflow_guard', True)
         template_vars['extensions'] = getattr(config, 'extensions', [])
 
         # --- DARK MODE TEMPLATE VARIABLES ---
@@ -3134,6 +3136,7 @@ def setup(app):
     app.add_config_value('doxtr_landscape_min_columns', DEFAULT_MIN_COLUMNS, 'env')
     app.add_config_value('doxtr_landscape_skip_table_classes', [], 'env')
     app.add_config_value('doxtr_tabulary_overflow_guard', True, 'env')
+    app.add_config_value('doxtr_pagegoal_overflow_guard', True, 'env')
 
     # Table cell overflow protection (Phase 1 + Phase 2 config)
     app.add_config_value('doxtr_table_nobreak_patterns', None, 'env')
