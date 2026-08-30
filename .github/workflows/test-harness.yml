@@ -25,18 +25,30 @@ jobs:
       - uses: actions/checkout@v6
       
       - name: Pull container image
-        run: docker pull doxtr/reactor:0.0.5
+        run: docker pull doxtr/reactor:0.0.6
 
       - name: Run test harness
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspaces/docs \
             -w /workspaces/docs \
-            doxtr/reactor:0.0.5 \
+            doxtr/reactor:0.0.6 \
             bash -c '
               pip install -e /workspaces/docs &&
               cd test_harness &&
               python test_runner.py --fail-on-pending
+            '
+
+      - name: Run unit tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspaces/docs \
+            -w /workspaces/docs \
+            doxtr/reactor:0.0.6 \
+            bash -c '
+              pip install -e /workspaces/docs &&
+              pip install pytest &&
+              python -m pytest test_harness/ tests/ -v --tb=short
             '
       
       - name: Upload Report
@@ -66,14 +78,14 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Pull container image
-        run: docker pull doxtr/reactor:0.0.5
+        run: docker pull doxtr/reactor:0.0.6
       
       - name: Run doc8 on RST files
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspaces/docs \
             -w /workspaces/docs/test_harness \
-            doxtr/reactor:0.0.5 \
+            doxtr/reactor:0.0.6 \
             bash -c 'for f in source/_test_cases/*.rst; do
                 echo "Checking $f..."
                 doc8 --config .doc8.ini "$f" || exit 1

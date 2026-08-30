@@ -556,6 +556,10 @@ DOXTR_TABLES = {
         #               content length of wrappable columns.
         #   'maxcontent': Each column width is proportional to its longest word.
         'column_width_algorithm': 'minfloor',
+        # Width multiplier for header text relative to body text.
+        # Bold sans-serif fonts (e.g. Montserrat Bold) are typically 30-40% wider
+        # per character than proportional body text.
+        'header_char_width_factor': 1.35,
         # Enable/disable automatic column width recomputation.
         # When False, Phase 2 is skipped entirely (early return).
         'auto_colwidths': True,

@@ -1119,7 +1119,7 @@ doxtr_microtype = {
     'enabled': True,        # Master switch (also disabled automatically in draft mode)
     'protrusion': True,     # Hanging punctuation — characters protrude slightly into margin
     'expansion': True,      # Font expansion — eliminates uneven word spacing
-    'kerning': False,       # Fine kerning (only works with pdfTeX, not LuaLaTeX/XeLaTeX)
+    'kerning': False,       # Fine character-pair kerning (requires microtype >= 2.6a for LuaTeX)
     'stretch': 10,          # Maximum stretch percentage
     'shrink': 10,           # Maximum shrink percentage
 }
@@ -1251,6 +1251,10 @@ doxtr_tables = {
         'title_font_color': '#FFFFFF',
         'title_font': 'Montserrat',
         'title_font_size': r'\bfseries',
+        # --- Content-Aware Column Widths ---
+        'column_width_algorithm': 'minfloor',      # 'minfloor' or 'maxcontent'
+        'header_char_width_factor': 1.35,          # Bold header font width relative to body
+        'auto_colwidths': True,                    # Enable/disable Phase 2 column widths
     }
 }
 ```

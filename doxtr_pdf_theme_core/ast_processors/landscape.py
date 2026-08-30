@@ -9,6 +9,7 @@ The landscape processor runs early (priority 985) so that contained elements
 """
 from docutils import nodes
 from sphinx.util import logging
+import math
 
 __all__ = [
     'process_landscape_ast',
@@ -236,8 +237,22 @@ def process_landscape_ast(app, doctree, docname):
             # preamble.tex_t): selects smallest A-series page size that
             # fits the table with readable column widths (default 22mm
             # per column).  Content can break across multiple pages.
+            #
+            # When Phase 2 has computed a content-aware minimum table width
+            # (doxtr_min_table_width_mm), use it to derive a synthetic column
+            # count that triggers the correct page size.  This ensures tables
+            # with wide unbreakable content (UUIDs, FQDNs) get a large enough
+            # page instead of relying on the generic col_count * 22mm heuristic.
+            from .tables import DEFAULT_MIN_COL_WIDTH_MM
+            min_col_width_mm = DEFAULT_MIN_COL_WIDTH_MM
+            content_min_mm = node.get('doxtr_min_table_width_mm', 0)
+            heuristic_mm = col_count * min_col_width_mm
+            if content_min_mm > heuristic_mm:
+                effective_cols = int(math.ceil(content_min_mm / min_col_width_mm))
+            else:
+                effective_cols = col_count
             pre = nodes.raw(
-                '', f'\n\\begin{{doxtradaptivelandscape}}[{col_count}]\n',
+                '', f'\n\\begin{{doxtradaptivelandscape}}[{effective_cols}]\n',
                 format='latex',
             )
             post = nodes.raw(

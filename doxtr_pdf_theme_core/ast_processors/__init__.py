@@ -19,7 +19,7 @@ from .tables import (process_tables_ast, fix_block_after_paragraph,
                      PARAGRAPH_FIX_PRIORITY, register_par_fix_block_type,
                      register_par_fix_skip_type,
                      register_column_width_algorithm,
-                     ColumnInfo, PT_TO_MM)
+                     ColumnInfo, PT_TO_MM, DEFAULT_MIN_COL_WIDTH_MM)
 from .codeblocks import process_codeblocks_ast
 from .epigraphs import process_epigraph_ast
 from .sidebars import process_sidebar_ast, render_nodes_to_latex
@@ -46,6 +46,7 @@ __all__ = [
     'register_column_width_algorithm',
     'ColumnInfo',
     'PT_TO_MM',
+    'DEFAULT_MIN_COL_WIDTH_MM',
     'process_codeblocks_ast',
     'process_epigraph_ast',
     'process_sidebar_ast',

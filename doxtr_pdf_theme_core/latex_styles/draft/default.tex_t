@@ -102,12 +102,15 @@
     %% Even pages: watermark along the bottom edge, rotated 180° (text reads right-to-left).
     \ifodd\value{page}
       %% Odd landscape page: watermark centred along the top edge.
+      %% Use 0.35 (not 0.5) to avoid overlap with table header backgrounds
+      %% that extend upward via \extrarowheight into the margin area.
       \node[dddraftstyle, rotate=0]
-        at (0.5\paperwidth, -0.5\dddoddmarginwidth) {<< doxtr_draft_text >>};
+        at (0.5\paperwidth, -0.35\dddoddmarginwidth) {<< doxtr_draft_text >>};
     \else
       %% Even landscape page: watermark centred along the bottom edge.
+      %% Use 0.35 (not 0.5) to keep symmetry with odd-page adjustment.
       \node[dddraftstyle, rotate=180]
-        at (0.5\paperwidth, -\paperheight+0.5\dddevenmarginwidth) {<< doxtr_draft_text >>};
+        at (0.5\paperwidth, -\paperheight+0.35\dddevenmarginwidth) {<< doxtr_draft_text >>};
     \fi
   }{%
     %% --- PORTRAIT MODE: watermark on outer (long) edges ---

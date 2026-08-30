@@ -88,7 +88,7 @@ from .dark_file_swap import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.4"
+__version__ = "1.1.5"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -796,6 +796,13 @@ def _resolve_table_overflow_config(app, config, ctx):
 
     if getattr(config, 'doxtr_table_auto_colwidths', None) is None:
         config.doxtr_table_auto_colwidths = generic.get('auto_colwidths', True)
+
+    # --- Resolve header char width factor ---
+    if getattr(config, 'doxtr_table_header_char_width_factor', None) is None:
+        from .ast_processors.tables import DEFAULT_HEADER_CHAR_WIDTH_FACTOR
+        config.doxtr_table_header_char_width_factor = generic.get(
+            'header_char_width_factor', DEFAULT_HEADER_CHAR_WIDTH_FACTOR
+        )
 
     # --- Compute char_width_mm from mono font metrics ---
     if getattr(config, 'doxtr_table_char_width_mm', None) is None:
@@ -3134,6 +3141,7 @@ def setup(app):
     app.add_config_value('doxtr_table_column_width_algorithm', None, 'env')
     app.add_config_value('doxtr_table_auto_colwidths', None, 'env')
     app.add_config_value('doxtr_table_char_width_mm', None, 'env')
+    app.add_config_value('doxtr_table_header_char_width_factor', None, 'env')
 
     # Dark file swap: intercepts RST/MyST source text before parsing to rewrite
     # directive file arguments to their _dark variants. Targets extensions that
