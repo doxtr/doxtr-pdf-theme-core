@@ -21,3 +21,9 @@ jobs:
         pip install build
     - name: Build Package
       run: python -m build
+    - name: Install package
+      run: pip install -e .
+    - name: Install test dependencies
+      run: pip install pytest
+    - name: Run tests
+      run: python -m pytest tests/ test_harness/ -v

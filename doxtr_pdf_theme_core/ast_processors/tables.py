@@ -70,7 +70,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_NOBREAK_PATTERNS: List[str] = DOXTR_TABLES['generic']['nobreak_patterns']
 
 #: Default characters at which non-protected values may be broken.
-DEFAULT_BREAK_CHARS = '-/.:'
+#: Note: '-' is excluded because Sphinx converts it to \sphinxhyphen{}
+#: (-\kern\z@) which already allows line breaks after hyphens.
+DEFAULT_BREAK_CHARS: str = DOXTR_TABLES['generic']['break_chars']
 
 #: Default column width algorithm name.
 DEFAULT_ALGORITHM = 'minfloor'

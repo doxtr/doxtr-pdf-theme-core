@@ -18,8 +18,59 @@
 %% Allow emergency stretching in table cells to prevent overflow
 %% when AST-level processing misses edge cases.
 \AtBeginEnvironment{tabulary}{\emergencystretch=1em}
-\AtBeginEnvironment{longtable}{\emergencystretch=1em}
+\AtBeginEnvironment{longtable}{\emergencystretch=1em\doxtrcapbreakablepagegoal}
 \AtBeginEnvironment{tabular}{\emergencystretch=1em}
+
+<% if doxtr_global_overflow_guard %>
+%% ----------------------------------------------------
+%% GLOBAL TEXT OVERFLOW SAFETY NET
+%% Ensure all paragraph contexts (body text, list items, tcolorbox content,
+%% footnotes) have emergency stretch available to prevent long unbreakable
+%% tokens (UUIDs, URLs, identifiers) from overflowing the right margin.
+%% The table-scoped hooks above (1em) handle table cells specifically;
+%% this global setting covers everything else. microtype expansion
+%% distributes the stretch more evenly across glyphs.
+%% Disable via doxtr_global_overflow_guard = False in conf.py.
+%% ----------------------------------------------------
+\emergencystretch=3em
+\tolerance=400
+
+%% Override \mbox to allow line breaks for content that would overflow.
+%% Sphinx's LaTeX writer wraps inline literals (UUIDs, identifiers) in
+%% \mbox{} to prevent line breaks.  When the content is wider than
+%% 0.3\linewidth, this override falls back to unhboxed text so that
+%% emergency stretch and hyphen break opportunities can work.
+\makeatletter
+\def\doxtr@mbox@maxfrac{0.3}
+\let\doxtr@orig@mbox\mbox
+\renewcommand{\mbox}[1]{%
+  \setbox0=\hbox{#1}%
+  \ifdim\wd0>\doxtr@mbox@maxfrac\linewidth  % threshold: UUIDs (36 chars) exceed this
+    %% in most column widths, while short identifiers (SHA-256, DR-0001) stay below.
+    %% Child themes can adjust by redefining \doxtr@mbox@maxfrac (default 0.3).
+    #1%
+  \else
+    \doxtr@orig@mbox{#1}%
+  \fi
+}
+\makeatother
+
+%% Override \sphinxhref to allow line breaks at hyphens within link text.
+%% Sphinx defines \sphinxhyphen as -\kern\z@ which intentionally prevents
+%% breaks at hyphens (useful for short identifiers like SHA-256).  Inside
+%% long hyperlinks (UUIDs, compound names), this causes overflow because
+%% the entire link text becomes a single unbreakable unit.  This override
+%% locally redefines \sphinxhyphen to use -\penalty0\hskip0pt which
+%% allows TeX to break at hyphens when needed.
+\makeatletter
+\let\doxtr@orig@sphinxhref\sphinxhref
+\protected\def\sphinxhref#1#2{{%
+  \let\sphinxhyphen\doxtr@sphinxhyphen@breakable
+  \doxtr@orig@sphinxhref{#1}{#2}%
+}}
+\newcommand{\doxtr@sphinxhyphen@breakable}{-\penalty0\hskip0pt\relax}
+\makeatother
+<% endif %>
 
 %% ----------------------------------------------------
 %% AUTO-LANDSCAPE ENVIRONMENT (legacy, width-based)
@@ -42,6 +93,15 @@
     \centering\usebox{\doxtr@landscapebox}%
     \end{landscape}%
   \else
+    %% Preemptive page break: if the measured box will not fit in the
+    %% remaining space on this page, force a page break BEFORE placing it.
+    %% Without this, TeX commits the unbreakable savebox to the page list
+    %% and it overflows into the footer (the output routine fires too late
+    %% to prevent the overflow for already-committed boxes).
+    \par
+    \ifdim\dimexpr\pagetotal+\ht\doxtr@landscapebox+\dp\doxtr@landscapebox\relax>\pagegoal
+      \newpage
+    \fi
     \noindent\usebox{\doxtr@landscapebox}%
   \fi
 }
@@ -257,6 +317,31 @@
 <% endif %>
 \newcommand{\doxtrcapbreakablepagegoal}{\doxtr@cap@breakable@pagegoal}
 
+%% ----------------------------------------------------
+%% PER-PAGE PAGEGOAL ENFORCEMENT (LuaTeX buildpage_filter)
+%% The start-of-environment cap (\doxtr@cap@breakable@pagegoal) only
+%% fires when a breakable tcolorbox begins. Content WITHIN a breakable
+%% box (e.g. longtable inside a sphinx-needs card) triggers independent
+%% page breaks where \pagegoal may exceed \textheight due to stale
+%% \vsize values. This LuaTeX callback fires during the output routine
+%% on every page transition, enforcing the cap unconditionally.
+%% Complements (does not replace) the existing defense-in-depth guards:
+%% \AtBeginDocument sync, \aftergroup resync, per-router caps.
+%% Theme authors can remove via:
+%%   \directlua{luatexbase.remove_from_callback('buildpage_filter', 'doxtr.cap_pagegoal')}
+%% ----------------------------------------------------
+<% if doxtr_pagegoal_overflow_guard %>
+\directlua{
+  luatexbase.add_to_callback('buildpage_filter', function(extrainfo)
+    local pagegoal = tex.pagegoal
+    local textheight = tex.dimen.textheight
+    if pagegoal > textheight then
+      tex.pagegoal = textheight
+    end
+  end, 'doxtr.cap_pagegoal')
+}
+<% endif %>
+
 \newenvironment{doxtradaptivelandscape}[1][0]{%
   %% #1 = column count (passed from the AST processor)
   \setcounter{doxtr@colcount}{#1}%
@@ -361,6 +446,33 @@
   \ifdim\pdfpagewidth>\pdfpageheight #1\else #2\fi
 }
 \makeatother
+
+<% if doxtr_durole_par_fix %>
+%% ----------------------------------------------------
+%% FIX: SPHINX \DUrole PARAGRAPH TOLERANCE
+%% sphinx-needs renders multi-value fields (semicolon-separated
+%% lists such as fully_qualified_domain_names) with blank lines
+%% between entries.  In LaTeX a blank line produces a \par token.
+%% Sphinx defines \DUrole with \providecommand* (short form),
+%% which rejects \par inside its arguments, causing:
+%%   "Paragraph ended before \DUrole was complete."
+%% Redefine as \long (no *) so \par tokens are accepted.
+%% Child themes can override via register_preamble_hook at after_packages.
+%% ----------------------------------------------------
+\makeatletter
+\renewcommand{\DUrole}[2]{%
+  \ifcsname DUrole\detokenize{#1}\endcsname
+    \csname DUrole\detokenize{#1}\endcsname{#2}%
+  \else
+    \ifcsname docutilsrole\detokenize{#1}\endcsname
+      \csname docutilsrole\detokenize{#1}\endcsname{#2}%
+    \else
+      #2%
+    \fi
+  \fi
+}
+\makeatother
+<% endif %>
 
 %% ----------------------------------------------------
 %% RESOLVE SPHINX vs KOMA-SCRIPT CONFLICT
@@ -1005,6 +1117,19 @@
     \@nameuse{doxtr@align@#1}{#1}{#2}{#3}{#4}%
   }%
 }
+
+<% if doxtr_heading_needspace_guard %>
+%% Ensure paragraph and subparagraph headings have enough vertical space
+%% to avoid overflowing into the footer. Run-in headings use \nobreak
+%% after the heading text, which prevents page breaks between the heading
+%% and its first paragraph. Without \needspace, a heading near the page
+%% bottom forces its content into the footer zone.
+%% Disable via doxtr_heading_needspace_guard = False in conf.py.
+%% Child themes can adjust the reserve by redefining \doxtr@paragraph@needspace.
+\newcommand{\doxtr@paragraph@needspace}{3\baselineskip}
+\xpretocmd{\paragraph}{\needspace{\doxtr@paragraph@needspace}}{}{}  % 3 lines: heading + first line + safety
+\xpretocmd{\subparagraph}{\needspace{\doxtr@paragraph@needspace}}{}{}  % same rationale as \paragraph
+<% endif %>
 \makeatother
 
 %%% Style chapters

@@ -55,7 +55,7 @@ doxtr_pdf_theme_core = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["test_harness"]
+testpaths = ["test_harness", "tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 
