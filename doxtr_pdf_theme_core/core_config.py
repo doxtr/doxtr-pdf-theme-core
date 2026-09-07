@@ -116,6 +116,7 @@ DOXTR_GLOBALS = {
         'sidebar_style_path': '',           # Custom folder for sidebar .tex_t templates
         'topic_style_path': '',             # Custom folder for topic .tex_t templates
         'contents_style_path': '',          # Custom folder for contents .tex_t templates
+        'todo_style_path': '',              # Custom folder for todo .tex_t templates
         # --- Landscape Pages ---
         'landscape_package': 'pdflscape',   # Package for landscape pages: 'pdflscape', 'lscape', or '' to disable
 
@@ -779,7 +780,7 @@ DOXTR_CODE = {
 
     # --- Plain text: Neutral grey ---
     'text': {
-        'icon': r'\faIcon{file-alt}',
+        'icon': r'\faIcon{file-lines}',
         'title_background_color': '#4A4A5A',
         'title_font_color': '#E0E0E0',
         'icon_color': '#E0E0E0',
@@ -854,7 +855,7 @@ DOXTR_CODE = {
 
     # --- INI: Neutral grey config format ---
     'ini': {
-        'icon': r'\faIcon{cogs}',
+        'icon': r'\faIcon{gears}',
         'title_background_color': '#5A5A6A',
         'title_font_color': '#E8E8F0',
         'icon_color': '#E8E8F0',
@@ -899,7 +900,7 @@ DOXTR_CODE = {
 
     # --- Makefile: Build-system grey ---
     'make': {
-        'icon': r'\faIcon{cogs}',
+        'icon': r'\faIcon{gears}',
         'title_background_color': '#6D8086',
         'title_font_color': '#FFFFFF',
         'icon_color': '#FFFFFF',
@@ -912,7 +913,7 @@ DOXTR_ADMONITIONS = {
     # Artful admonitions with distinct colors per type and explicit dark content text
     'generic': {
         'style': 'default',
-        'title_icon': r'\faIcon{info-circle}',
+        'title_icon': r'\faIcon{circle-info}',
         'title_icon_padding': '3ex',
         'title_decoration_spacing': '2mm',
         'title_background_color': '#184878',
@@ -958,7 +959,7 @@ DOXTR_ADMONITIONS = {
         'content_font_color': '#1A1A2E',
     },
     'warning': {
-        'title_icon': r'\faIcon{exclamation-triangle}',
+        'title_icon': r'\faIcon{triangle-exclamation}',
         'title_background_color': '#D48030',
         'title_icon_box_background_color': '#B06820',
         'title_font_color': '#FFFFFF',
@@ -1000,7 +1001,7 @@ DOXTR_ADMONITIONS = {
         'content_font_color': '#1A1A2E',
     },
     'seealso': {
-        'title_icon': r'\faIcon{external-link-alt}',
+        'title_icon': r'\faIcon{up-right-from-square}',
         'title_background_color': '#4890C8',
         'title_icon_box_background_color': '#3078B0',
         'content_background_color': '#F0F8FF',
@@ -1028,6 +1029,25 @@ DOXTR_HIGHLIGHTS = {
     'after_skip': '1.5em plus 0.5em minus 0.5em',   # Space after box
 }
 
+DOXTR_TODO = {
+    # Todo styling — used for the RST `.. todo::` directive (sphinx.ext.todo).
+    # Todos are rendered as a flat "tile" tcolorbox with a coloured title
+    # strip (flip title style), replacing Sphinx's default `sphinxtodo`
+    # environment. Modelled on a red-accented flag so open tasks stand out.
+    'style': 'default',                     # Name of the .tex_t file to load
+    'title_icon': '',                        # Optional icon before title (e.g., r'\faIcon{tasks}')
+    'title_font': 'Montserrat',             # Title font family
+    'title_font_size': r'\large\bfseries', # Title font size/weight
+    'title_font_color': '#FFFFFF',          # Title text color (white on red strip)
+    'title_background_color': '#C0392B',    # Title strip background (strong red)
+    'content_font': '',                     # Content body font (empty = inherit)
+    'content_font_size': r'\normalsize',   # Content body font size
+    'content_font_color': '#1A1A2E',        # Content text color
+    'content_background_color': '#FBE9E7',  # Content area background (light red/pink)
+    'before_skip': '1.5em plus 0.5em minus 0.5em',  # Space before box
+    'after_skip': '1.5em plus 0.5em minus 0.5em',   # Space after box
+}
+
 DOXTR_SIDEBAR = {
     # Sidebar styling — used for the RST `.. sidebar::` directive.
     # Sidebars are rendered as floating/inset boxes alongside main content.
@@ -1037,7 +1057,7 @@ DOXTR_SIDEBAR = {
     'border_radius': '4pt',                  # Corner radius for top corners
     'border_width': '0.8pt',                 # Frame border width
     'border_color': '#184878',               # Frame border color
-    'title_icon': r'\faIcon{columns}',       # Icon before sidebar title
+    'title_icon': r'\faIcon{table-columns}', # Icon before sidebar title
     'title_font': 'Montserrat',              # Title font family
     'title_font_size': r'\large\bfseries',   # Title font size/weight
     'title_background_color': '#184878',     # Title bar background
@@ -1299,6 +1319,7 @@ CORE_CONFIG_MANIFEST = {
     'highlights': DOXTR_HIGHLIGHTS,
     'topic': DOXTR_TOPIC,
     'contents': DOXTR_CONTENTS,
+    'todo': DOXTR_TODO,
     'toc': DOXTR_TOC,
     'bibliography': DOXTR_BIBLIOGRAPHY,
     'index': DOXTR_INDEX,

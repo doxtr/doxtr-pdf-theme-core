@@ -1,0 +1,45 @@
+<# Default todo style template — a tcolorbox modelled on the classic
+   "flip title" tile style: a flat (tile) box with sharp corners and the
+   title rendered in a coloured strip below the top edge. Replaces Sphinx's
+   default `sphinxtodo` environment for the `.. todo::` directive
+   (sphinx.ext.todo) with a fully styled, themeable box.
+
+   Base tcolorbox pattern this style implements:
+
+       \begin{tcolorbox}[tile,flip title={sharp corners},
+       title=My title,colback=red!10,
+       colbacktitle=red!75!black]
+       ... body ...
+       \end{tcolorbox}
+
+   Context variables:
+     td_conf — merged todo configuration dict with _cmyk color suffixes
+               (the *_cmyk vars are rgb-format strings, matching highlights)
+#>
+
+\definecolor{ddtodotitlefg}{rgb}{<< td_conf.title_font_color_cmyk >>}
+\definecolor{ddtodotitlebg}{rgb}{<< td_conf.title_background_color_cmyk >>}
+\definecolor{ddtodocontentbg}{rgb}{<< td_conf.content_background_color_cmyk >>}
+\definecolor{ddtodocontentfg}{rgb}{<< td_conf.content_font_color_cmyk >>}
+
+<# ddtodobox takes one mandatory argument: #1 = the todo title text.
+   `tile` gives the flat, borderless look; `flip title={sharp corners}`
+   renders the title strip below the box top with squared corners. Colors,
+   fonts and skips are driven entirely by td_conf so themes and users can
+   override them via config, and the whole box via a replacement default.tex_t.
+#>
+\newtcolorbox{ddtodobox}[1]{
+    enhanced, breakable, parbox=false,
+    tile,
+    flip title={sharp corners},
+    title={<% if td_conf.title_icon %><< td_conf.title_icon >>\hspace{0.4em}<% endif %>#1},
+    before skip=<< td_conf.before_skip >>,
+    after skip=<< td_conf.after_skip >>,
+    colback=ddtodocontentbg,
+    coltext=ddtodocontentfg,
+    colbacktitle=ddtodotitlebg,
+    coltitle=ddtodotitlefg,
+    fontupper=<% if td_conf.content_font %>\fontspec{<< td_conf.content_font >>}<% endif %><< td_conf.content_font_size >>,
+    fonttitle=<% if td_conf.title_font %>\fontspec{<< td_conf.title_font >>}<% endif %><< td_conf.title_font_size >>,
+    left=1em, right=1em, top=0.8em, bottom=0.8em,
+}

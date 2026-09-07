@@ -1582,3 +1582,237 @@ class TestPagegoalCapInTopics:
             "First raw node should be the pagegoal cap"
         assert r'\begin{doxtrcontents}' in raw_nodes[1].astext(), \
             "Second raw node should be the \\begin command"
+
+
+# ---------------------------------------------------------------------------
+# Tests: todo.py
+# ---------------------------------------------------------------------------
+
+# sphinx.ext.todo is optional — skip the whole module's todo tests if absent.
+pytest.importorskip("sphinx.ext.todo")
+from sphinx.ext.todo import todo_node  # noqa: E402
+
+
+def _make_todo_node(title='My Todo', body='Todo body content'):
+    """Build a todo_node with a title child, mirroring sphinx.ext.todo output."""
+    node = todo_node()
+    node += nodes.title(text=title)
+    node += nodes.paragraph(text=body)
+    return node
+
+
+def _add_todo_nested(doc, todo=None):
+    """Append a todo_node nested inside a section (real-content shape).
+
+    Real ``.. todo::`` content is always nested inside a section/body, never
+    a direct child of the document root. process_todo_ast intentionally skips
+    todos whose parent is the document root (that shape only occurs in
+    TodoListProcessor's transient document), so positive wrapping tests must
+    nest the todo under a section to exercise the styling path.
+    """
+    if todo is None:
+        todo = _make_todo_node()
+    section = nodes.section()
+    section += nodes.title(text='Section')
+    section += todo
+    doc += section
+    return todo
+
+
+class TestTodoAST:
+    """Tests for process_todo_ast."""
+
+    def test_todo_node_gets_wrapped(self):
+        """A todo_node gets wrapped in ddtodobox when todos are included."""
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        config = MockConfig(
+            doxtr_enable_todo_processor=True,
+            todo_include_todos=True,
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+        _add_todo_nested(doc)
+
+        process_todo_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        raw_text = ''.join(r.astext() for r in raw_nodes)
+        assert r'\begin{ddtodobox}{My Todo}' in raw_text
+        assert r'\end{ddtodobox}' in raw_text
+
+    def test_todo_hidden_when_include_false(self):
+        """When todo_include_todos is False, the todo_node is removed, no box."""
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        config = MockConfig(
+            doxtr_enable_todo_processor=True,
+            todo_include_todos=False,
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+        doc += _make_todo_node()
+
+        process_todo_ast(app, doc, 'index')
+
+        # No ddtodobox emitted...
+        raw_nodes = list(doc.traverse(nodes.raw))
+        assert len(raw_nodes) == 0
+        # ...and the todo_node itself is gone from the tree.
+        assert len(list(doc.traverse(todo_node))) == 0
+
+    def test_todo_hidden_when_include_unset(self):
+        """When todo_include_todos is unset (None), todos are treated as hidden."""
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        # MockConfig returns None for todo_include_todos (not set) → hidden.
+        config = MockConfig(doxtr_enable_todo_processor=True)
+        app = MockApp(config=config)
+        doc = _make_document()
+        doc += _make_todo_node()
+
+        process_todo_ast(app, doc, 'index')
+
+        assert len(list(doc.traverse(nodes.raw))) == 0
+        assert len(list(doc.traverse(todo_node))) == 0
+
+    def test_todo_disabled_flag(self):
+        """When doxtr_enable_todo_processor=False, no processing happens."""
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        config = MockConfig(
+            doxtr_enable_todo_processor=False,
+            todo_include_todos=True,
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+        doc += _make_todo_node()
+
+        process_todo_ast(app, doc, 'index')
+
+        # Disabled → untouched: no raw nodes, todo_node still present.
+        assert len(list(doc.traverse(nodes.raw))) == 0
+        assert len(list(doc.traverse(todo_node))) == 1
+
+    def test_todo_skips_html_builder(self):
+        """Todo processor skips when builder format is not latex."""
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        class HtmlBuilder:
+            name = 'html'
+            format = 'html'
+
+        config = MockConfig(
+            doxtr_enable_todo_processor=True,
+            todo_include_todos=True,
+        )
+        app = MockApp(config=config, builder=HtmlBuilder())
+        doc = _make_document()
+        doc += _make_todo_node()
+
+        process_todo_ast(app, doc, 'index')
+
+        # Non-latex → no wrapping, todo_node untouched.
+        assert len(list(doc.traverse(nodes.raw))) == 0
+        assert len(list(doc.traverse(todo_node))) == 1
+
+    def test_todo_idempotent(self):
+        """Running the processor twice does not double-wrap."""
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        config = MockConfig(
+            doxtr_enable_todo_processor=True,
+            todo_include_todos=True,
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+        _add_todo_nested(doc)
+
+        process_todo_ast(app, doc, 'index')
+        process_todo_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        raw_text = ''.join(r.astext() for r in raw_nodes)
+        assert raw_text.count(r'\begin{ddtodobox}') == 1
+        assert raw_text.count(r'\end{ddtodobox}') == 1
+
+    def test_todo_title_special_chars_escaped(self):
+        """Special LaTeX characters in the title are escaped."""
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        config = MockConfig(
+            doxtr_enable_todo_processor=True,
+            todo_include_todos=True,
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+        _add_todo_nested(doc, _make_todo_node(title='Fix A & B_test'))
+
+        process_todo_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        begin_text = next(r.astext() for r in raw_nodes if 'ddtodobox' in r.astext()
+                          and r'\begin' in r.astext())
+        assert r'\&' in begin_text
+        assert r'\_' in begin_text
+
+    def test_todo_directly_under_document_root_is_skipped(self):
+        """Regression: a todo_node directly under a document root is skipped.
+
+        Reproduces the TodoListProcessor crash scenario. Sphinx's
+        ``.. todolist::`` handler deep-copies each todo into a transient
+        ``new_document('')`` and calls env.resolve_references on it, which
+        re-emits 'doctree-resolved'. In that transient document the todo's
+        parent is the document root. If process_todo_ast replaced that copy,
+        TodoListProcessor's subsequent ``document.remove(todo)`` would raise
+        ``list.remove(x): x not in list``. The processor must skip such
+        top-level todos and leave them intact.
+        """
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        config = MockConfig(
+            doxtr_enable_todo_processor=True,
+            todo_include_todos=True,
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+        # Append the todo DIRECTLY to the document root (transient shape).
+        doc += _make_todo_node()
+
+        process_todo_ast(app, doc, 'index')
+
+        # No ddtodobox emitted for the top-level (transient) todo...
+        raw_nodes = list(doc.traverse(nodes.raw))
+        raw_text = ''.join(r.astext() for r in raw_nodes)
+        assert r'\begin{ddtodobox}' not in raw_text
+        # ...and the todo_node is left intact so TodoListProcessor can still
+        # remove it from its transient document without error.
+        remaining = list(doc.traverse(todo_node))
+        assert len(remaining) == 1
+        assert not remaining[0].get('doxtr_todo_processed')
+
+
+class TestPagegoalCapInTodo:
+    """Verify pagegoal cap node injection in the todo processor."""
+
+    def test_todo_wrapper_has_pagegoal_cap_before_begin(self):
+        """The first raw node in a todo wrapper is the pagegoal cap."""
+        from doxtr_pdf_theme_core.ast_processors.todo import process_todo_ast
+
+        config = MockConfig(
+            doxtr_enable_todo_processor=True,
+            todo_include_todos=True,
+            doxtr_pagegoal_overflow_guard=True,
+        )
+        app = MockApp(config=config)
+        doc = _make_document()
+        _add_todo_nested(doc)
+
+        process_todo_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        assert len(raw_nodes) >= 2, "Expected cap + begin/end raw LaTeX nodes"
+        assert r'\doxtrcapbreakablepagegoal' in raw_nodes[0].astext(), \
+            "First raw node should be the pagegoal cap"
+        assert r'\begin{ddtodobox}' in raw_nodes[1].astext(), \
+            "Second raw node should be the \\begin command"

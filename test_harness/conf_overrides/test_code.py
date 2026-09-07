@@ -415,7 +415,7 @@ doxtr_code = {
     },
 
     'text': {
-        'icon': r'\faIcon{file-alt}',
+        'icon': r'\faIcon{file-lines}',
         'title_background_color': '#4A4A5A',
         'title_font_color': '#E0E0E0',
         'icon_color': '#E0E0E0',

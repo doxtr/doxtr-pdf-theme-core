@@ -94,6 +94,12 @@ VALID_KEYS: Dict[str, Set[str]] = {
         'content_font', 'content_font_size', 'content_font_color', 'content_background_color',
         'before_skip', 'after_skip',
     },
+    'todo': {
+        'style', 'title_icon', 'title_font', 'title_font_size', 'title_font_color',
+        'title_background_color',
+        'content_font', 'content_font_size', 'content_font_color', 'content_background_color',
+        'before_skip', 'after_skip',
+    },
     'toc': {
         'title_font', 'title_size', 'title_color',
         'chapter_font', 'chapter_size', 'chapter_color', 'chapter_bold',

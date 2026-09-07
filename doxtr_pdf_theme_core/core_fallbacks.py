@@ -152,6 +152,35 @@ DEFAULT_HIGHLIGHTS_STYLE = r"""
 }
 """
 
+# --- ABSOLUTE FALLBACK FOR TODO ---
+# Injected ONLY when a child theme is broken or missing todo/default.tex_t.
+# Mirrors DEFAULT_HIGHLIGHTS_STYLE but implements the flat "tile" flip-title
+# tcolorbox used for the `.. todo::` directive. Takes one mandatory argument
+# (#1 = the todo title). Colors are hardcoded here (strong red title strip,
+# light red content) since no config is available at fallback time.
+DEFAULT_TODO_STYLE = r"""
+\definecolor{ddtodotitlefg}{rgb}{1.000, 1.000, 1.000}
+\definecolor{ddtodotitlebg}{rgb}{0.753, 0.224, 0.169}
+\definecolor{ddtodocontentbg}{rgb}{0.984, 0.914, 0.906}
+\definecolor{ddtodocontentfg}{rgb}{0.102, 0.102, 0.180}
+
+\newtcolorbox{ddtodobox}[1]{
+    enhanced, breakable, parbox=false,
+    tile,
+    flip title={sharp corners},
+    title={#1},
+    before skip=1.5em plus 0.5em minus 0.5em,
+    after skip=1.5em plus 0.5em minus 0.5em,
+    colback=ddtodocontentbg,
+    coltext=ddtodocontentfg,
+    colbacktitle=ddtodotitlebg,
+    coltitle=ddtodotitlefg,
+    fonttitle=\large\bfseries,
+    fontupper=\normalsize,
+    left=1em, right=1em, top=0.8em, bottom=0.8em,
+}
+"""
+
 # --- ABSOLUTE FALLBACK FOR CODE BLOCKS ---
 DEFAULT_CODE_STYLE = r"""
 \makeatletter

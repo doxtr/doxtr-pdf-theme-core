@@ -78,6 +78,8 @@ my_company_theme/
         │   └── default.tex_t       # Custom sidebar rendering
         ├── table/
         │   └── default.tex_t       # Custom table captions
+        ├── todo/
+        │   └── default.tex_t       # Custom todo (sphinx.ext.todo) rendering
         └── title_page/
             └── my_cover.tex_t      # Custom title page layout
 ```
@@ -834,6 +836,7 @@ Each section can be set via `doxtr_theme_defaults` (in a theme) or directly in `
 | `needs` | `doxtr_needs` | sphinx-needs box styling |
 | `sidebar` | `doxtr_sidebar` | RST `.. sidebar::` directive styling |
 | `highlights` | `doxtr_highlights` | RST `.. highlights::` directive styling |
+| `todo` | `doxtr_todo` | RST `.. todo::` (sphinx.ext.todo) directive styling |
 | `toc` | `doxtr_toc` | Table of Contents entry styling |
 | `bibliography` | `doxtr_bibliography` | Bibliography/citation entry styling |
 | `index` | `doxtr_index` | Back-of-book index styling |
@@ -939,6 +942,7 @@ Valid keys per entry: `dir`, `upright`, `bold`, `italic`, `bold_italic`, `option
 | `doxtr_sidebar_style_path` | string | Sidebar `.tex_t` files |
 | `doxtr_topic_style_path` | string | Topic `.tex_t` files |
 | `doxtr_contents_style_path` | string | Contents `.tex_t` files |
+| `doxtr_todo_style_path` | string | Todo `.tex_t` files |
 | `doxtr_title_page_template_path` | string | Title page `.tex_t` files |
 
 ---
@@ -1137,7 +1141,7 @@ All admonition types inherit from `'generic'`. Override only the keys you want t
 doxtr_admonitions = {
     'generic': {
         'style': 'default',                         # Name of the .tex_t template to use
-        'title_icon': r'\faIcon{info-circle}',       # LaTeX command or image path
+        'title_icon': r'\faIcon{circle-info}',       # LaTeX command or image path
         'title_icon_color': '#FFFFFF',
         'title_icon_size': '',                       # LaTeX size command (empty = inherit)
         'title_icon_padding': '3ex',
@@ -1163,7 +1167,7 @@ doxtr_admonitions = {
         'content_background_color': '#EEF5FC',
     },
     'warning': {
-        'title_icon': r'\faIcon{exclamation-triangle}',
+        'title_icon': r'\faIcon{triangle-exclamation}',
         'title_background_color': '#D48030',
         'content_background_color': '#FFF8F0',
     },
@@ -1473,7 +1477,7 @@ doxtr_sidebar = {
     'border_radius': '4pt',
     'border_width': '0.8pt',
     'border_color': '#184878',
-    'title_icon': r'\faIcon{columns}',
+    'title_icon': r'\faIcon{table-columns}',
     'title_font': 'Montserrat',
     'title_font_size': r'\large\bfseries',
     'title_background_color': '#184878',
@@ -1519,6 +1523,37 @@ doxtr_highlights = {
     'after_skip': '1.5em plus 0.5em minus 0.5em',
 }
 ```
+
+### `doxtr_todo`
+
+Controls the RST `.. todo::` directive (`sphinx.ext.todo`), rendered as a flat "tile" box with a coloured *flip-title* strip. Requires `sphinx.ext.todo` in `extensions` and `todo_include_todos = True` (todos are hidden by default in Sphinx, and the theme respects that gate).
+
+```rst
+.. todo::
+
+   Wire up the export endpoint before the release.
+```
+
+```python
+doxtr_todo = {
+    'style': 'default',
+    'title_icon': '',                      # Optional icon (e.g. r'\faIcon{tasks}')
+    'title_font': 'Montserrat',
+    'title_font_size': r'\large\bfseries',
+    'title_font_color': '#FFFFFF',         # WCAG-adjusted against the title strip
+    'title_background_color': '#C0392B',   # Strong red title strip
+    'content_font': '',                   # Empty = inherit body font
+    'content_font_size': r'\normalsize',
+    'content_font_color': '#1A1A2E',
+    'content_background_color': '#FBE9E7', # Light red/pink content area
+    'before_skip': '1.5em plus 0.5em minus 0.5em',
+    'after_skip': '1.5em plus 0.5em minus 0.5em',
+}
+```
+
+> **WCAG Auto-Adjustment**: `title_font_color` is automatically adjusted to contrast against `title_background_color`. Set `doxtr_globals['wcag_level'] = 1` to disable.
+
+Disable the styling entirely (fall back to Sphinx's default `sphinxtodo`) with `doxtr_enable_todo_processor = False`.
 
 ### `doxtr_toc`
 

@@ -72,6 +72,7 @@ from .ast_processors import (
     process_highlights_ast,
     process_needs_ast,
     process_topics_ast,
+    process_todo_ast,
     process_landscape_ast,
     wrap_in_landscape,
     register_landscape_wrapper,
@@ -89,7 +90,7 @@ from .dark_file_swap import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.7"
+__version__ = "1.1.8"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -182,6 +183,7 @@ _BUILTIN_PREAMBLE_VARS: frozenset = frozenset({
     'doxtr_rendered_highlights',
     'doxtr_rendered_topic',
     'doxtr_rendered_contents',
+    'doxtr_rendered_todo',
     'doxtr_rendered_containers',
     'doxtr_rendered_title_page',
     'doxtr_rendered_tables',
@@ -1045,6 +1047,7 @@ def _stage_merge_and_resolve(app, config):
     highlights = merge_section('highlights')
     topic = merge_section('topic')
     contents = merge_section('contents')
+    todo = merge_section('todo')
     toc = merge_section('toc')
     bibliography = merge_section('bibliography')
     index = merge_section('index')
@@ -1070,6 +1073,7 @@ def _stage_merge_and_resolve(app, config):
         'highlights': highlights,
         'topic': topic,
         'contents': contents,
+        'todo': todo,
         'toc': toc,
         'bibliography': bibliography,
         'index': index,
@@ -1088,6 +1092,7 @@ def _stage_merge_and_resolve(app, config):
     validate_config_keys(getattr(config, 'doxtr_highlights', {}), 'highlights')
     validate_config_keys(getattr(config, 'doxtr_topic', {}), 'topic')
     validate_config_keys(getattr(config, 'doxtr_contents', {}), 'contents')
+    validate_config_keys(getattr(config, 'doxtr_todo', {}), 'todo')
     validate_config_keys(getattr(config, 'doxtr_toc', {}), 'toc')
     validate_config_keys(getattr(config, 'doxtr_bibliography', {}), 'bibliography')
     validate_config_keys(getattr(config, 'doxtr_index', {}), 'index')
@@ -1507,6 +1512,7 @@ def _stage_merge_and_resolve(app, config):
         'highlights': _sections['highlights'],
         'topic': _sections['topic'],
         'contents': _sections['contents'],
+        'todo': _sections['todo'],
         'toc': _sections['toc'],
         'bibliography': _sections['bibliography'],
         'index': _sections['index'],
@@ -1668,6 +1674,7 @@ def _stage_build_and_render_preamble(app, config, ctx):
     highlights = ctx['highlights']
     topic = ctx['topic']
     contents = ctx['contents']
+    todo = ctx['todo']
     toc = ctx['toc']
     bibliography = ctx['bibliography']
     index = ctx['index']
@@ -2479,6 +2486,37 @@ def _stage_build_and_render_preamble(app, config, ctx):
             extra_ctx={'h_conf': h_conf},
         )
 
+        # 8b. Todo Resolution
+        # Mirrors the Highlights block: build the CMYK color vars (the *_cmyk
+        # suffixes are rgb-format strings, matching the other box types),
+        # backfill non-color defaults, then resolve + render the todo template.
+        td_conf = todo.copy()
+        _td_title_bg = td_conf.get('title_background_color') or '#C0392B'
+        td_conf['title_background_color_cmyk'] = safe_cmyk(_td_title_bg)
+        # WCAG contrast enforcement: ensure the todo title text stays readable
+        # against the title strip background. After dark inversion both colors
+        # may shift to similar luminance, making the title invisible. Todo has
+        # no title_icon_color key (the icon inherits coltitle), so skip icon
+        # enforcement with icon_key=None. This sets td_conf['title_font_color_cmyk'].
+        _wcag_enforce_title_colors(td_conf, _td_title_bg, wcag_level, wcag_color_debug,
+                                   icon_key=None)
+        td_conf['content_background_color_cmyk'] = safe_cmyk(td_conf.get('content_background_color') or '#FBE9E7')
+        td_conf['content_font_color_cmyk'] = safe_cmyk(td_conf.get('content_font_color') or '#1A1A2E')
+        td_conf.setdefault('title_icon', '')
+        td_conf.setdefault('title_font', 'Montserrat')
+        td_conf.setdefault('title_font_size', r'\large\bfseries')
+        td_conf.setdefault('content_font', '')
+        td_conf.setdefault('content_font_size', r'\normalsize')
+        td_conf.setdefault('before_skip', '1.5em plus 0.5em minus 0.5em')
+        td_conf.setdefault('after_skip', '1.5em plus 0.5em minus 0.5em')
+
+        td_style_name = td_conf.get('style', DEFAULT_STYLE_NAME)
+        template_vars['doxtr_rendered_todo'] = resolve_and_render_template(
+            app, env, template_vars, 'todo', td_style_name,
+            theme_style_paths, resolve_val, strict_mode, use_cache,
+            extra_ctx={'td_conf': td_conf},
+        )
+
         # 9. Topic Resolution
         topic_conf = _process_box_section(topic, 'topic', page_bg, wcag_level, wcag_color_debug,
                                           default_icon='')
@@ -2853,6 +2891,7 @@ def _stage_assemble_output(app, config, ctx):
     doxtr_rendered_highlights = template_vars.get('doxtr_rendered_highlights', '')
     doxtr_rendered_topic = template_vars.get('doxtr_rendered_topic', '')
     doxtr_rendered_contents = template_vars.get('doxtr_rendered_contents', '')
+    doxtr_rendered_todo = template_vars.get('doxtr_rendered_todo', '')
 
     # Collect rendered LaTeX from all registered custom style types
     _custom_preamble_parts = []
@@ -2903,7 +2942,7 @@ def _stage_assemble_output(app, config, ctx):
     # Assemble the final preamble with hook injection points:
     #   before_packages → my_preamble (core packages/structure) → after_packages
     #   → before_styles → rendered style blocks → after_styles → lol_tracker
-    _styles_block = f"{doxtr_rendered_code}\n{doxtr_rendered_sidebar}\n{doxtr_rendered_highlights}\n{doxtr_rendered_topic}\n{doxtr_rendered_contents}\n{_custom_rendered}"
+    _styles_block = f"{doxtr_rendered_code}\n{doxtr_rendered_sidebar}\n{doxtr_rendered_highlights}\n{doxtr_rendered_topic}\n{doxtr_rendered_contents}\n{doxtr_rendered_todo}\n{_custom_rendered}"
 
     # Override \sphinxremdimen if the class option differs from the actual
     # desired base font size (e.g. class gets 11pt but we want 11.5pt).
@@ -3095,7 +3134,7 @@ def setup(app):
         app.add_config_value(f'doxtr_{_legacy_key}', None, 'env')
         
     # Register the nested dictionary configurations
-    for conf_dict in ['title_page', 'headings', 'parts', 'epigraphs', 'draft', 'microtype', 'containers', 'tables', 'figures', 'code', 'admonitions', 'needs', 'sidebar', 'highlights', 'topic', 'contents', 'toc', 'bibliography', 'index', 'glossary', 'links']:
+    for conf_dict in ['title_page', 'headings', 'parts', 'epigraphs', 'draft', 'microtype', 'containers', 'tables', 'figures', 'code', 'admonitions', 'needs', 'sidebar', 'highlights', 'topic', 'contents', 'todo', 'toc', 'bibliography', 'index', 'glossary', 'links']:
         app.add_config_value(f'doxtr_{conf_dict}', {}, 'env')
 
     # Auto-register config values for style types already registered via
@@ -3134,6 +3173,9 @@ def setup(app):
     app.add_config_value('doxtr_enable_highlights_processor', True, 'env')
     app.add_config_value('doxtr_enable_needs_processor', True, 'env')
     app.add_config_value('doxtr_enable_topics_processor', True, 'env')
+    # Enable/disable the todo AST processor (styles the sphinx.ext.todo
+    # `.. todo::` directive as a ddtodobox tcolorbox).
+    app.add_config_value('doxtr_enable_todo_processor', True, 'env')
     app.add_config_value('doxtr_enable_landscape_processor', True, 'env')
     app.add_config_value('doxtr_table_auto_landscape', True, 'env')
     app.add_config_value('doxtr_landscape_min_columns', DEFAULT_MIN_COLUMNS, 'env')
@@ -3173,6 +3215,12 @@ def setup(app):
     app.connect('doctree-resolved', process_sidebar_ast, priority=994)
     app.connect('doctree-resolved', process_highlights_ast, priority=993)
     app.connect('doctree-resolved', process_topics_ast, priority=990)
+    # Todo runs at priority 992: after highlights (993), before topics (990).
+    # 992 is also the default priority for user processors registered via
+    # register_ast_processor. At equal priority Sphinx runs handlers in
+    # connection order, and core connects todo here during setup() — before
+    # any user processor — so core todo runs first.
+    app.connect('doctree-resolved', process_todo_ast, priority=992)
     app.connect('doctree-resolved', process_tables_ast, priority=996)
     app.connect('doctree-resolved', process_codeblocks_ast, priority=995)
     app.connect('doctree-resolved', process_epigraph_ast, priority=997)

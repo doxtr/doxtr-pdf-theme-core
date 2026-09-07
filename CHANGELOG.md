@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.1.8
+
+### Features
+
+#### Styled `.. todo::` directive (sphinx.ext.todo)
+
+- **Added a themeable `ddtodobox` tcolorbox** for the `sphinx.ext.todo` `.. todo::` directive, replacing Sphinx's default `sphinxtodo` environment. Rendered as a flat "tile" box with a coloured `flip title={sharp corners}` strip (default: strong-red strip, light-red content). Participates in the three-tier merge, dark mode, page adaptation, `dd:` resolution, WCAG title-contrast enforcement, and the pagegoal overflow guard.
+- Respects `sphinx.ext.todo`'s `todo_include_todos` gate — todos hidden by Sphinx's default (`False`) are not rendered.
+- New config section `doxtr_todo` (see README) with `title_*`/`content_*` keys mirroring `doxtr_highlights`.
+- New `doxtr_todo_style_path` (custom `.tex_t` folder) and `doxtr_enable_todo_processor` (default `True`) config values.
+- Fully overridable via `latex_styles/todo/default.tex_t`; absolute fallback `DEFAULT_TODO_STYLE` provided. No-ops gracefully when `sphinx.ext.todo` is not loaded.
+
+### Bug Fixes
+
+#### FontAwesome 7 Icon Name Compatibility
+
+- **Fix: rename hardcoded FontAwesome 5 icon names to their FontAwesome 7 equivalents** — A TeX Live update (revision dated 2025-11-06) installed `fontawesome7.sty`. Sphinx auto-selects the newest available icon package, so its default `iconpackage` switched from `fontawesome5` to `fontawesome7`. Several icon names were renamed in FontAwesome 6/7, so the previously hardcoded fa5 names (e.g. `\faIcon{info-circle}`) no longer exist in fa7, producing a fatal `"Package fontawesome7 Error: The requested icon info-circle was not found."` during the LaTeX build (no PDF produced).
+- Renamed the seven affected icons in the core defaults (`core_config.py`): `info-circle` → `circle-info`, `exclamation-triangle` → `triangle-exclamation`, `times-circle` → `circle-xmark`, `external-link-alt` → `up-right-from-square`, `file-alt` → `file-lines`, `cogs` → `gears`, `columns` → `table-columns`. All other icons the theme uses already have valid fontawesome7 names.
+- Updated the matching icon examples in `README.md` to keep the documentation consistent with the code.
+- **Note:** fontawesome5 and fontawesome7 use mutually exclusive names for these icons. This change requires fontawesome7 to be the active package. Themes or projects that pin `iconpackage=fontawesome5` in `sphinxsetup` should remove the pin (or set it to `fontawesome7`).
+
+### Tests
+
+- Added `tests/test_todo_style.py` (template + fallback + config-wiring markers) and `TestTodoAST` / `TestPagegoalCapInTodo` classes in `test_harness/test_ast_processors.py` (wrapping, disabled flag, non-latex skip, `todo_include_todos` gate, idempotency, title escaping, pagegoal cap ordering).
+- Added `tests/test_fa7_icons.py` verifying the FontAwesome 7 icon-name migration.
+
 ## 1.1.7
 
 ### Bug Fixes
