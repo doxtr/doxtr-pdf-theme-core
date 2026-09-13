@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.1.9
+
+### Features
+
+#### Dark-mode context API for inline content-generating extensions
+
+- **Added a read-only dark-mode context API** so extensions that *generate*
+  image source inline (e.g. a PlantUML Gantt string built in memory, as in
+  doxtr-roadmap) can emit dark-appropriate source themselves instead of
+  relying on the per-pixel HSL lightness inversion fallback. The classic
+  `_dark` file-swap mechanism cannot help these extensions because there is
+  no source file on disk to rewrite.
+- New public helpers exported from `doxtr_pdf_theme_core`:
+  - `is_dark_mode_active(config)` — `True` only when `doxtr_dark_mode` is on
+    **and** the resolved strategy is `'invert'` (a genuinely dark page).
+  - `get_dark_palette(config)` — a copy of the resolved dark semantic palette,
+    or `None` when inactive.
+  - `get_dark_mode_context(config)` — one-stop bundle:
+    `{active, strategy, palette, text_color, page_color, invert_color}`.
+  - `mark_image_dark_ready(app, filename)` (in `image_processing.py`) — mark an
+    already-dark-themed generated image (by exact basename) so the dark and
+    page-adaptation pipelines skip it. Registers exactly one basename, so it is
+    safe even when an extension shares an output namespace with hand-authored
+    diagrams (e.g. `sphinxcontrib.plantuml`'s `plantuml-<hash>.png`).
+- All helpers are soft-dependency friendly (import guarded) and safe to call
+  any time after `config_inited` (priority 900) fires — typically inside a
+  directive's `run()` method. Before that they report an inactive (light)
+  state.
+
+### Tests
+
+- Added `tests/test_dark_mode_context.py` covering activation logic (invert vs
+  passthrough vs dark-off), palette copying, the context bundle contract, and
+  the `mark_image_dark_ready` basename-skip behaviour.
+
 ## 1.1.8
 
 ### Features

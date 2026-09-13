@@ -90,7 +90,7 @@ from .dark_file_swap import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.8"
+__version__ = "1.1.9"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -148,8 +148,13 @@ __all__ = [
     'adapt_color_to_page',
     # Dark file swap API
     'register_dark_swap_directive',
+    # Dark-mode context API (for inline content-generating extensions)
+    'is_dark_mode_active',
+    'get_dark_palette',
+    'get_dark_mode_context',
     # Image processing API
     'register_image_processor',
+    'mark_image_dark_ready',
     # Dark mode strategy constants (for testing and child theme introspection)
     '_DARK_STRATEGY_LUMINANCE_THRESHOLD',
     '_ADAPTATION_LUMINANCE_THRESHOLD',
@@ -644,6 +649,162 @@ def _build_dark_section(light_merged: dict, dark_overrides_section: dict,
                        copy.deepcopy(dark_overrides_section))
 
 
+# ---------------------------------------------------------------------------
+# Public API: dark-mode context for inline content-generating extensions
+# ---------------------------------------------------------------------------
+#
+# Extensions that GENERATE image source inline (rather than referencing a
+# source file on disk) cannot benefit from the ``_dark`` file-swap mechanism
+# in ``dark_file_swap.py`` -- there is no source file to rewrite. The classic
+# example is doxtr-roadmap, which builds a PlantUML Gantt string in memory and
+# hands it to ``sphinxcontrib.plantuml`` via ``plantuml(uml=...)``.
+#
+# When such an extension emits a *coloured* diagram, the core's build-finished
+# image pipeline (image_processing.py) can only fall back to a per-pixel HSL
+# lightness inversion (``_invert_color_image_lightness``). That inversion does
+# not know which pixel is a "done bar" vs a "today marker" vs a background, so
+# the result rarely matches the theme's actual dark palette.
+#
+# The correct fix is for the generating extension to emit dark-appropriate
+# source in the first place, then exclude its generated images from the core's
+# pipeline (``doxtr_image_exclude_patterns``). These helpers give such an
+# extension read-only access to the dark-mode state the core already computes
+# during ``config_inited`` (priority 900), so the pattern works without a hard
+# dependency on core internals.
+#
+# All three helpers are safe to call at any point AFTER ``config_inited`` has
+# fired -- i.e. inside a directive's ``run()`` method or any later Sphinx
+# event. Before ``config_inited`` runs, the resolved values do not yet exist
+# and the helpers report an inactive (light) state.
+
+
+def is_dark_mode_active(config) -> bool:
+    """Return True when inline generators should emit *dark-themed* source.
+
+    This is the single decision an inline content generator (e.g. one that
+    builds PlantUML/Mermaid source in memory) should consult to decide whether
+    to switch to dark colours.
+
+    It is ``True`` only when BOTH:
+
+    1. ``doxtr_dark_mode`` is enabled, AND
+    2. the resolved strategy is ``'invert'`` (a genuinely dark page).
+
+    In ``'passthrough'`` mode the dark-mode page is actually light (sepia,
+    solarized, etc.), so light diagram source remains appropriate and this
+    returns ``False`` -- matching the guard used by ``dark_file_swap`` and the
+    image pipeline.
+
+    Args:
+        config: The Sphinx ``config`` object (``app.config``).
+
+    Returns:
+        bool: True if dark-themed source should be generated.
+
+    Example::
+
+        from doxtr_pdf_theme_core import is_dark_mode_active, get_dark_palette
+
+        if is_dark_mode_active(env.config):
+            palette = get_dark_palette(env.config)
+            done_color = palette['primary']
+            page_bg = palette['page']
+    """
+    if not to_bool(getattr(config, 'doxtr_dark_mode', False)):
+        return False
+    strategy = getattr(config, 'doxtr_dark_mode_strategy_resolved', 'invert')
+    return strategy == 'invert'
+
+
+def get_dark_palette(config):
+    """Return the resolved dark semantic palette, or ``None`` when inactive.
+
+    The returned dict is a **copy** of ``config.doxtr_dark_semantic_palette``
+    (safe to mutate) containing the same semantic keys as the light palette
+    (``primary``, ``secondary``, ``info``, ``success``, ``warning``,
+    ``danger``, ``page``), already inverted/merged for the dark page. These
+    are plain ``#RRGGBB`` hex strings suitable for direct use in generated
+    diagram source.
+
+    Returns ``None`` when :func:`is_dark_mode_active` is ``False`` so callers
+    can use a simple ``palette = get_dark_palette(config) or light_palette``
+    idiom.
+
+    Args:
+        config: The Sphinx ``config`` object (``app.config``).
+
+    Returns:
+        dict | None: A copy of the resolved dark palette, or ``None``.
+    """
+    if not is_dark_mode_active(config):
+        return None
+    palette = getattr(config, 'doxtr_dark_semantic_palette', None)
+    if not palette:
+        return None
+    return copy.deepcopy(palette)
+
+
+def get_dark_mode_context(config) -> dict:
+    """Return a one-stop bundle of dark-mode state for inline generators.
+
+    This is the recommended entry point for content-generating extensions. It
+    returns everything needed to theme generated source in a single call,
+    without the extension importing any core internals directly.
+
+    The returned dict always has these keys:
+
+    - ``active`` (bool): result of :func:`is_dark_mode_active`. When ``False``
+      the remaining values reflect the light/default state and generators
+      should keep their normal (light) colours.
+    - ``strategy`` (str): the resolved strategy -- ``'invert'`` or
+      ``'passthrough'`` (``'invert'`` whenever ``active`` is ``True``).
+    - ``palette`` (dict | None): the resolved dark palette (as returned by
+      :func:`get_dark_palette`), or ``None`` when inactive.
+    - ``text_color`` (str | None): ``config.doxtr_dark_text_color`` -- the dark
+      body text colour (e.g. ``'#DBDBDB'``), or ``None`` when inactive.
+    - ``page_color`` (str | None): the dark page background hex, or ``None``.
+    - ``invert_color`` (callable): ``hex_dark_invert`` bound for convenience --
+      ``invert_color('#FF8C00') -> '#...'``. Always present so a generator can
+      soft-invert an arbitrary literal colour that has no palette slot.
+
+    Args:
+        config: The Sphinx ``config`` object (``app.config``).
+
+    Returns:
+        dict: The dark-mode context bundle described above.
+
+    Example::
+
+        from doxtr_pdf_theme_core import get_dark_mode_context
+
+        ctx = get_dark_mode_context(env.config)
+        if ctx['active']:
+            done_color  = ctx['palette']['primary']
+            page_bg     = ctx['page_color']
+            text_color  = ctx['text_color']
+            # A literal accent with no palette slot can still be inverted:
+            accent      = ctx['invert_color']('#FF8C00')
+    """
+    active = is_dark_mode_active(config)
+    if not active:
+        return {
+            'active': False,
+            'strategy': getattr(config, 'doxtr_dark_mode_strategy_resolved', 'invert'),
+            'palette': None,
+            'text_color': None,
+            'page_color': None,
+            'invert_color': hex_dark_invert,
+        }
+    palette = get_dark_palette(config)
+    page_color = palette.get('page') if palette else None
+    return {
+        'active': True,
+        'strategy': 'invert',
+        'palette': palette,
+        'text_color': getattr(config, 'doxtr_dark_text_color', None),
+        'page_color': page_color,
+        'invert_color': hex_dark_invert,
+    }
 
 
 class StyleBoxDirective(Directive):
@@ -2989,6 +3150,7 @@ from .image_processing import (
     _adapt_image_backgrounds,
     _process_image_adapt_ast,
     register_image_processor,
+    mark_image_dark_ready,
     _reset_image_processor_registry,
     _get_parallel_workers,
 )

@@ -88,6 +88,64 @@ def _reset_image_processor_registry():
     _image_processor_registry.clear()
 
 
+def mark_image_dark_ready(app, filename) -> None:
+    """Mark an already-dark-themed image so the dark pipeline skips it.
+
+    Public API for extensions that GENERATE image content which is already
+    correct for the dark page (e.g. doxtr-roadmap renders a PlantUML Gantt
+    from a dark-themed source string). Such images must NOT be re-processed by
+    the built-in dark pipeline (``_recolour_dark_images``): a dark,
+    largely-achromatic diagram would be misclassified as grayscale line-art
+    and remapped (black->text, white->page), inverting its already-correct
+    colours.
+
+    The ``_dark`` file-swap mechanism handles this automatically for
+    *file-based* diagrams (``.. uml:: arch.puml`` with ``arch_dark.puml``), but
+    inline-generated diagrams have no source file to swap, so the generating
+    extension must register the final output filename explicitly.
+
+    This records *filename* in the same set the file-swap uses
+    (``app.env._doxtr_dark_substituted``); the build-finished dark and
+    page-adaptation pipelines skip any output file whose basename matches.
+
+    Only the exact basename you register is skipped, so this is safe even when
+    an extension shares an output namespace with hand-authored diagrams (e.g.
+    ``sphinxcontrib.plantuml`` writes every diagram as ``plantuml-<hash>.png``
+    -- registering one specific hash does not affect the others).
+
+    Call this from a directive's ``run()`` (once the final filename is known)
+    or any time before ``build-finished`` fires. It is a no-op when dark mode
+    is not active, so callers may register unconditionally.
+
+    Args:
+        app: The Sphinx application object.
+        filename: The output image filename (basename or path; only the
+            basename is matched, e.g. ``'plantuml-<hash>.png'``).
+
+    Example (inside a directive ``run()``)::
+
+        import hashlib
+        key = hashlib.sha1()
+        key.update(node['incdir'].encode()); key.update(b'\0')
+        key.update(node['uml'].encode())
+        try:
+            from doxtr_pdf_theme_core import mark_image_dark_ready
+            mark_image_dark_ready(env.app, f'plantuml-{key.hexdigest()}.png')
+        except ImportError:
+            pass  # core not installed -- nothing to skip
+    """
+    if not filename:
+        return
+    if not to_bool(getattr(app.config, 'doxtr_dark_mode', False)):
+        return
+    env = getattr(app, 'env', None)
+    if env is None:
+        return
+    if not hasattr(env, '_doxtr_dark_substituted'):
+        env._doxtr_dark_substituted = set()
+    env._doxtr_dark_substituted.add(os.path.basename(filename))
+
+
 def _get_parallel_workers(config):
     """Determine the number of parallel workers from config.
 

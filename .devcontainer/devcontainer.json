@@ -1,6 +1,6 @@
 {
 "name": "doxtr-pdf-theme-core-dev",
-"image": "docker.io/doxtr/reactor:0.0.5",
+"image": "docker.io/doxtr/reactor:0.1.2",
 "forwardPorts": [
     8009
 ],

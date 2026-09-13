@@ -1656,7 +1656,7 @@ If you set `InnerLinkColor` or `OuterLinkColor` directly in `latex_elements['sph
 ---
 
 ```bash
-export VERSION=v1.0.42 && git tag $VERSION && git push origin $VERSION
+export VERSION=v1.1.9 && git tag $VERSION && git push origin $VERSION
 ```
 
 GitHub Actions will publish to PyPI automatically on release.
