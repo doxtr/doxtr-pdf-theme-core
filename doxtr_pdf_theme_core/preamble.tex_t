@@ -93,16 +93,44 @@
     \centering\usebox{\doxtr@landscapebox}%
     \end{landscape}%
   \else
-    %% Preemptive page break: if the measured box will not fit in the
-    %% remaining space on this page, force a page break BEFORE placing it.
-    %% Without this, TeX commits the unbreakable savebox to the page list
-    %% and it overflows into the footer (the output routine fires too late
-    %% to prevent the overflow for already-committed boxes).
+    %% Portrait fallback.  The content fits within \linewidth, so it does
+    %% not need rotation.
+    %%
+    %% DEFENSE-IN-DEPTH: if the measured box is TALLER than the text block
+    %% (\textheight), it can never fit on a page as an unbreakable box --
+    %% placing it whole (even after a \newpage) overflows into the footer
+    %% and off the bottom of the page.  In that case, abandon the savebox
+    %% and re-typeset the content inline (via \BODY re-execution is not
+    %% possible here, so we discard the box and let the caller's content
+    %% break naturally is also impossible once boxed) -- therefore the
+    %% only safe action for an over-tall box is to warn and still place it,
+    %% since the content is already committed to the savebox.  Callers with
+    %% tall content must use a breakable environment (longtable) instead;
+    %% the auto-landscape AST processor no longer wraps Sphinx tables here
+    %% for exactly this reason.
     \par
-    \ifdim\dimexpr\pagetotal+\ht\doxtr@landscapebox+\dp\doxtr@landscapebox\relax>\pagegoal
+    \ifdim\dimexpr\ht\doxtr@landscapebox+\dp\doxtr@landscapebox\relax>\textheight\relax
+      %% Over-tall unbreakable box: a \newpage cannot help.  Placing it
+      %% would overflow the footer regardless.  Emit a clear diagnostic so
+      %% the author knows to switch to a breakable environment, then place
+      %% it on a fresh page to minimise (not eliminate) the collision.
+      \PackageWarning{doxtr}{doxtrautolandscape: content is taller than
+        \string\textheight\space and cannot be placed as an unbreakable box
+        without overflowing the footer. Use a breakable environment
+        (e.g. longtable) or a forced .. container:: doxtr-landscape instead.}%
       \newpage
+      \noindent\usebox{\doxtr@landscapebox}%
+    \else
+      %% Preemptive page break: if the measured box will not fit in the
+      %% remaining space on this page, force a page break BEFORE placing it.
+      %% Without this, TeX commits the unbreakable savebox to the page list
+      %% and it overflows into the footer (the output routine fires too late
+      %% to prevent the overflow for already-committed boxes).
+      \ifdim\dimexpr\pagetotal+\ht\doxtr@landscapebox+\dp\doxtr@landscapebox\relax>\pagegoal
+        \newpage
+      \fi
+      \noindent\usebox{\doxtr@landscapebox}%
     \fi
-    \noindent\usebox{\doxtr@landscapebox}%
   \fi
 }
 \makeatother

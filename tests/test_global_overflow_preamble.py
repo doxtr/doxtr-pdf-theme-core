@@ -212,6 +212,22 @@ class TestLandscapeSaveboxOverflow:
         block = preamble[idx_check:idx_check + 200]
         assert r"\newpage" in block
 
+    def test_over_tall_box_guard_present(self):
+        r"""An over-tall unbreakable box must be detected against \textheight.
+
+        A savebox taller than \textheight can never fit on a page without
+        overflowing the footer, so the environment must special-case it
+        (warn + fresh page) rather than silently overflow.
+        """
+        preamble = _read_preamble()
+        assert r"\ht\doxtr@landscapebox+\dp\doxtr@landscapebox\relax>\textheight" in preamble
+
+    def test_over_tall_box_warns(self):
+        """The over-tall guard must emit a package warning to guide the author."""
+        preamble = _read_preamble()
+        assert r"\PackageWarning{doxtr}" in preamble
+        assert "doxtrautolandscape" in preamble
+
 
 class TestConfigRegistration:
     """Verify new config values are registered in setup()."""

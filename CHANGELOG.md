@@ -1,39 +1,39 @@
 # Changelog
 
-## 1.1.9
+## 1.1.10
 
-### Features
+### Bug Fixes
 
-#### Dark-mode context API for inline content-generating extensions
+#### Tall portrait tables overflowing into the footer
 
-- **Added a read-only dark-mode context API** so extensions that *generate*
-  image source inline (e.g. a PlantUML Gantt string built in memory, as in
-  doxtr-roadmap) can emit dark-appropriate source themselves instead of
-  relying on the per-pixel HSL lightness inversion fallback. The classic
-  `_dark` file-swap mechanism cannot help these extensions because there is
-  no source file on disk to rewrite.
-- New public helpers exported from `doxtr_pdf_theme_core`:
-  - `is_dark_mode_active(config)` — `True` only when `doxtr_dark_mode` is on
-    **and** the resolved strategy is `'invert'` (a genuinely dark page).
-  - `get_dark_palette(config)` — a copy of the resolved dark semantic palette,
-    or `None` when inactive.
-  - `get_dark_mode_context(config)` — one-stop bundle:
-    `{active, strategy, palette, text_color, page_color, invert_color}`.
-  - `mark_image_dark_ready(app, filename)` (in `image_processing.py`) — mark an
-    already-dark-themed generated image (by exact basename) so the dark and
-    page-adaptation pipelines skip it. Registers exactly one basename, so it is
-    safe even when an extension shares an output namespace with hand-authored
-    diagrams (e.g. `sphinxcontrib.plantuml`'s `plantuml-<hash>.png`).
-- All helpers are soft-dependency friendly (import guarded) and safe to call
-  any time after `config_inited` (priority 900) fires — typically inside a
-  directive's `run()` method. Before that they report an inactive (light)
-  state.
+- **Fixed narrow, multi-page tables running into the footer** (and off the bottom of the page). The auto-landscape processor previously wrapped narrow Sphinx tables (below `doxtr_landscape_min_columns`) in the legacy `doxtrautolandscape` environment, which typesets content into an *unbreakable* savebox/minipage. A table taller than `\textheight` could not fit and overflowed the footer. Sphinx tables always fill `\linewidth`, so the environment's width-based rotation check could never fire for them anyway.
+- Narrow Sphinx tables are no longer wrapped in `doxtrautolandscape`. Tall portrait tables are instead **promoted to `longtable`** so they break across pages with repeated headers and "continued" markers.
+- New config value `doxtr_table_longtable_row_threshold` (default `12`) — minimum row count (header + body) at which a narrow portrait table is promoted to `longtable`. Set to `0` to disable promotion.
+- **Defense-in-depth**: the `doxtrautolandscape` environment now detects an over-tall box (`> \textheight`) and emits a `\PackageWarning{doxtr}` diagnostic instead of silently overflowing, guiding authors to use a breakable environment.
+- Hardened `doxtr_landscape_skip_table_classes` handling against a `None` config value.
+- **Enable `parallel_write_safe: True`** — The extension now correctly declares itself safe for parallel writing. All `doctree-resolved` and `build-finished` handlers guard on `builder.format == 'latex'` (which is inherently serial), and all module-level state is read-only during the write phase. This eliminates the spurious Sphinx warning and unblocks parallel writing for HTML/other builders when this extension is also loaded.
+
+### New Features
+
+#### Modular URL Line-Break Guard
+
+- **Added a URL line-break guard** that makes Sphinx inline links (`\url` / `\sphinxurl` / `\sphinxhref`) break-friendly, preventing long query-string-heavy URLs (UUIDs, percent-encoded parameters, base64 blobs, tokens with no hyphens or spaces) from overflowing the right margin as overfull hboxes. The guard adds inter-character stretch via `\Urlmuskip` and extends `\UrlBreaks` with structural (and optionally alphanumeric) break points.
+- New config value `doxtr_url_break_guard` (default `True`) — master switch; set `False` to disable the guard entirely (e.g. when a child theme handles URL breaking differently).
+- New config value `doxtr_url_break_aggressive` (default `True`) — when the guard is on, also allow breaks between plain letters and digits so unbroken alphanumeric tokens can wrap. Set `False` for a conservative structural-only break set.
+- New config value `doxtr_url_break_path` — custom folder for the `url_break/default.tex_t` override (parity with the other `*_style_path`/`*_path` custom-resolution keys).
+- **Fully overridable** via `latex_styles/url_break/default.tex_t`, resolved through the same hierarchical template engine as every other style type (custom path → user project → theme paths → core file → absolute fallback `DEFAULT_URL_BREAK_STYLE`). The guard is *not* inlined in `preamble.tex_t`; it is injected via `register_preamble_hook(..., position='after_packages')` so it lands after `url`/`hyperref` and survives child-theme whole-preamble overrides.
+- The inter-character stretch is exposed as the redefinable macro `\doxtrurlmuskip` (assigned at `\begin{document}` so a later redefinition via `register_preamble_hook` is honoured). Extra break points can be appended with `\g@addto@macro\UrlBreaks{...}` via a preamble hook.
+
+#### Parallel image processing
+
+- **Parallel image processing** — Dark mode recolouring and page-adaptation background replacement now process images in parallel via `ProcessPoolExecutor`. Configurable via `doxtr_image_parallel_workers` (default: `'auto'` = `min(cpu_count, 8)`). Set to `1` for sequential processing (debugging). For projects with many images, this significantly reduces `build-finished` time.
+- **`register_image_processor(fn, position)`** — New public API for child themes to completely replace the built-in dark-mode (`'dark'`) or page-adaptation (`'adapt'`) image pipeline with a custom implementation.
 
 ### Tests
 
-- Added `tests/test_dark_mode_context.py` covering activation logic (invert vs
-  passthrough vs dark-off), palette copying, the context bundle contract, and
-  the `mark_image_dark_ready` basename-skip behaviour.
+- Added `TestLandscapeAutoWrap` in `test_harness/test_ast_processors.py` covering: narrow tables not wrapped, short tables kept as `tabular`, tall tables promoted to `longtable`, zero-threshold disables promotion, wide tables still wrapped in `doxtradaptivelandscape`, and `no-landscape` opt-out.
+- Added over-tall-box guard assertions to `tests/test_global_overflow_preamble.py`.
+- Added `tests/test_url_break_guard.py` covering config registration, `template_vars` threading, fallback rendering, aggressive/conservative branches, disabled = emit-nothing, `\providecommand` redefinability, `\AtBeginDocument` deferral, the not-inlined-in-preamble guarantee, style-type resolvability, override precedence, and `.tex_t`/`DEFAULT_URL_BREAK_STYLE` sync.
 
 ## 1.1.8
 
@@ -107,19 +107,6 @@ No action needed for LuaLaTeX users (the previous default was silently broken).
 - Updated default microtype test to expect `kerning=false` in generated `.tex` output.
 
 ---
-
-## 1.1.11
-
-### New Features
-
-- **Parallel image processing** — Dark mode recolouring and page-adaptation background replacement now process images in parallel via `ProcessPoolExecutor`. Configurable via `doxtr_image_parallel_workers` (default: `'auto'` = `min(cpu_count, 8)`). Set to `1` for sequential processing (debugging). For projects with many images, this significantly reduces `build-finished` time.
-- **`register_image_processor(fn, position)`** — New public API for child themes to completely replace the built-in dark-mode (`'dark'`) or page-adaptation (`'adapt'`) image pipeline with a custom implementation.
-
-## 1.1.10
-
-### Bug Fixes
-
-- **Enable `parallel_write_safe: True`** — The extension now correctly declares itself safe for parallel writing. All `doctree-resolved` and `build-finished` handlers guard on `builder.format == 'latex'` (which is inherently serial), and all module-level state is read-only during the write phase. This eliminates the spurious Sphinx warning and unblocks parallel writing for HTML/other builders when this extension is also loaded.
 
 ## 1.1.2
 

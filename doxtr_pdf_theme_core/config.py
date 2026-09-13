@@ -174,6 +174,7 @@ VALID_KEYS: Dict[str, Set[str]] = {
         'table_style_path', 'figure_style_path', 'code_style_path',
         'admonition_style_path', 'need_style_path', 'title_page_template_path',
         'sidebar_style_path', 'topic_style_path', 'contents_style_path',
+        'todo_style_path', 'url_break_path',
         'landscape_package',
         'font_auto_discover',   # Enable/disable font auto-discovery (requires fonttools)
     },

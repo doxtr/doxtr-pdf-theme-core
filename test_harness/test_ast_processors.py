@@ -1816,3 +1816,162 @@ class TestPagegoalCapInTodo:
             "First raw node should be the pagegoal cap"
         assert r'\begin{ddtodobox}' in raw_nodes[1].astext(), \
             "Second raw node should be the \\begin command"
+
+
+# ---------------------------------------------------------------------------
+# Tests: landscape.py — process_landscape_ast (footer-overflow-fix)
+# ---------------------------------------------------------------------------
+
+def _make_landscape_table_doc(ncols, nrows=1):
+    """Create a document with a single table of *ncols* columns, *nrows* rows."""
+    doc = _make_document()
+    table = nodes.table()
+    tgroup = nodes.tgroup(cols=ncols)
+    for _ in range(ncols):
+        tgroup += nodes.colspec(colwidth=1)
+    tbody = nodes.tbody()
+    for _ in range(nrows):
+        row = nodes.row()
+        for _ in range(ncols):
+            row += nodes.entry()
+        tbody += row
+    tgroup += tbody
+    table += tgroup
+    doc += table
+    return doc
+
+
+class TestLandscapeAutoWrap:
+    """Verify auto-landscape wrapping decisions in process_landscape_ast."""
+
+    def test_narrow_table_not_wrapped(self):
+        """Narrow tables (< min_columns) must NOT be wrapped in any landscape env.
+
+        This is the footer-overflow fix: Sphinx tables always fill \\linewidth,
+        so doxtrautolandscape can never rotate them and its unbreakable savebox
+        fallback overflows the footer for tall tables.  Narrow tables are left
+        as normal breakable tables.
+        """
+        from doxtr_pdf_theme_core.ast_processors.landscape import process_landscape_ast
+
+        config = MockConfig(
+            doxtr_enable_landscape_processor=True,
+            doxtr_table_auto_landscape=True,
+            doxtr_landscape_min_columns=4,
+        )
+        app = MockApp(config=config)
+        doc = _make_landscape_table_doc(3)
+
+        process_landscape_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        joined = ''.join(n.astext() for n in raw_nodes)
+        assert 'doxtrautolandscape' not in joined, \
+            "Narrow Sphinx table must not be wrapped in doxtrautolandscape"
+        assert 'doxtradaptivelandscape' not in joined, \
+            "Narrow table must not be wrapped in doxtradaptivelandscape"
+
+    def test_short_narrow_table_stays_tabular(self):
+        """A short narrow table must NOT be promoted to longtable."""
+        from doxtr_pdf_theme_core.ast_processors.landscape import process_landscape_ast
+
+        config = MockConfig(
+            doxtr_enable_landscape_processor=True,
+            doxtr_table_auto_landscape=True,
+            doxtr_landscape_min_columns=4,
+            doxtr_table_longtable_row_threshold=12,
+        )
+        app = MockApp(config=config)
+        doc = _make_landscape_table_doc(3, nrows=3)
+
+        process_landscape_ast(app, doc, 'index')
+
+        table = list(doc.findall(nodes.table))[0]
+        assert 'longtable' not in table.get('classes', []), \
+            "Short table must stay as plain tabular"
+
+    def test_tall_narrow_table_promoted_to_longtable(self):
+        """A tall narrow table must be promoted to longtable so it paginates.
+
+        This is the second half of the footer-overflow fix: a bare Sphinx
+        tabular is unbreakable, so a tall portrait table still overflows the
+        footer.  Promoting it to longtable lets it break across pages.
+        """
+        from doxtr_pdf_theme_core.ast_processors.landscape import process_landscape_ast
+
+        config = MockConfig(
+            doxtr_enable_landscape_processor=True,
+            doxtr_table_auto_landscape=True,
+            doxtr_landscape_min_columns=4,
+            doxtr_table_longtable_row_threshold=12,
+        )
+        app = MockApp(config=config)
+        doc = _make_landscape_table_doc(3, nrows=20)
+
+        process_landscape_ast(app, doc, 'index')
+
+        table = list(doc.findall(nodes.table))[0]
+        assert 'longtable' in table.get('classes', []), \
+            "Tall table must be promoted to longtable"
+        # And it must not be rotated to landscape.
+        raw_nodes = list(doc.traverse(nodes.raw))
+        joined = ''.join(n.astext() for n in raw_nodes)
+        assert 'landscape' not in joined
+
+    def test_longtable_promotion_disabled_by_zero_threshold(self):
+        """Setting the row threshold to 0 disables longtable promotion."""
+        from doxtr_pdf_theme_core.ast_processors.landscape import process_landscape_ast
+
+        config = MockConfig(
+            doxtr_enable_landscape_processor=True,
+            doxtr_table_auto_landscape=True,
+            doxtr_landscape_min_columns=4,
+            doxtr_table_longtable_row_threshold=0,
+        )
+        app = MockApp(config=config)
+        doc = _make_landscape_table_doc(3, nrows=40)
+
+        process_landscape_ast(app, doc, 'index')
+
+        table = list(doc.findall(nodes.table))[0]
+        assert 'longtable' not in table.get('classes', []), \
+            "Zero threshold must disable promotion"
+
+    def test_wide_table_wrapped_in_adaptive(self):
+        """Wide tables (>= min_columns) still get doxtradaptivelandscape."""
+        from doxtr_pdf_theme_core.ast_processors.landscape import process_landscape_ast
+
+        config = MockConfig(
+            doxtr_enable_landscape_processor=True,
+            doxtr_table_auto_landscape=True,
+            doxtr_landscape_min_columns=4,
+        )
+        app = MockApp(config=config)
+        doc = _make_landscape_table_doc(5)
+
+        process_landscape_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        joined = ''.join(n.astext() for n in raw_nodes)
+        assert r'\begin{doxtradaptivelandscape}' in joined, \
+            "Wide table must be wrapped in doxtradaptivelandscape"
+
+    def test_no_landscape_class_skipped(self):
+        """A table with the no-landscape class is left untouched."""
+        from doxtr_pdf_theme_core.ast_processors.landscape import process_landscape_ast
+
+        config = MockConfig(
+            doxtr_enable_landscape_processor=True,
+            doxtr_table_auto_landscape=True,
+            doxtr_landscape_min_columns=4,
+        )
+        app = MockApp(config=config)
+        doc = _make_landscape_table_doc(6)
+        list(doc.findall(nodes.table))[0]['classes'].append('no-landscape')
+
+        process_landscape_ast(app, doc, 'index')
+
+        raw_nodes = list(doc.traverse(nodes.raw))
+        joined = ''.join(n.astext() for n in raw_nodes)
+        assert 'landscape' not in joined, \
+            "no-landscape table must not be wrapped in any landscape env"

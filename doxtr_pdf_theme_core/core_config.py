@@ -117,6 +117,15 @@ DOXTR_GLOBALS = {
         'topic_style_path': '',             # Custom folder for topic .tex_t templates
         'contents_style_path': '',          # Custom folder for contents .tex_t templates
         'todo_style_path': '',              # Custom folder for todo .tex_t templates
+        'url_break_path': '',               # Custom folder for the url_break guard .tex_t override
+        # url_break is a preamble-guard style type whose subdir == 'url_break';
+        # the template engine derives its custom-folder key as
+        # 'url_break_path' (f'{style_dir}_path'), so it is named without the
+        # '_style' segment the other types carry. Set doxtr_url_break_path in
+        # conf.py (registered as a config value) or url_break_path in
+        # doxtr_globals['light'] to point at a custom folder holding
+        # url_break/default.tex_t.
+        'url_break_path': '',               # Custom folder for URL line-break guard .tex_t template
         # --- Landscape Pages ---
         'landscape_package': 'pdflscape',   # Package for landscape pages: 'pdflscape', 'lscape', or '' to disable
 

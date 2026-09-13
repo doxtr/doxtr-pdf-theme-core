@@ -80,6 +80,7 @@ from .ast_processors import (
     NO_LANDSCAPE_CLASS,
     FORCE_LANDSCAPE_CLASS,
     DEFAULT_MIN_COLUMNS,
+    DEFAULT_LONGTABLE_ROW_THRESHOLD,
     make_pagegoal_cap_node,
 )
 from .dark_file_swap import (
@@ -90,7 +91,7 @@ from .dark_file_swap import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "1.1.9"
+__version__ = "1.1.10"
 
 # Legacy flat-key compat list (remove in v1.1.0)
 _LEGACY_GLOBAL_KEYS = [
@@ -238,6 +239,42 @@ def _inject_tabulary_guard():
     check happens at registration time in ``config_inited()``.
     """
     return _TABULARY_GUARD_LATEX
+
+
+# --- URL LINE-BREAK GUARD ---
+# Unlike the tabulary guard (a fixed LaTeX string), the URL-break guard is a
+# fully OVERRIDABLE .tex_t fragment resolved through the same hierarchical
+# template engine as every other style type (see templates.py STYLE_TYPES
+# 'url_break'). A child theme can drop latex_styles/url_break/default.tex_t to
+# replace the rendered LaTeX entirely, exactly like admonition/code/etc.
+#
+# We still inject it as a preamble HOOK (position 'after_packages') rather than
+# inlining it in preamble.tex_t, because:
+#   1. It is a preamble-level guard that must land AFTER url/hyperref are
+#      loaded, matching where the tabulary guard goes.
+#   2. Hook injection survives child-theme preamble.tex_t overrides — a theme
+#      that replaces the whole preamble does not silently lose the guard.
+#   3. Keeping it out of preamble.tex_t is the whole point: the guard is not
+#      hardcoded inline; its LaTeX comes from the overridable fragment.
+#
+# The render happens during the render stage (config_inited), which stashes the
+# resolved LaTeX in _rendered_url_break_guard. The no-arg hook below simply
+# returns that stashed string at preamble-assembly time. When
+# doxtr_url_break_guard is False the render is skipped and this stays '',
+# so the hook emits nothing.
+_rendered_url_break_guard: str = ''
+
+
+def _inject_url_break_guard() -> str:
+    """Return the rendered URL-break guard LaTeX for preamble injection.
+
+    Registered as an ``after_packages`` preamble hook when
+    ``doxtr_url_break_guard`` is True. The actual LaTeX is produced during the
+    render stage by resolving the overridable ``url_break`` ``.tex_t`` fragment,
+    so a child theme can fully replace it. Returns ``''`` when the guard is
+    disabled or nothing was rendered.
+    """
+    return _rendered_url_break_guard
 
 
 # --- EXTENSIBLE PREAMBLE HOOK REGISTRY (Phase 2.8) ---
@@ -1038,6 +1075,15 @@ def config_inited(app, config):
     if getattr(config, 'doxtr_tabulary_overflow_guard', True):
         if not any(fn is _inject_tabulary_guard for fn, _ in _preamble_hooks):
             register_preamble_hook(_inject_tabulary_guard, position='after_packages')
+
+    # URL line-break guard — injected via preamble hook (after_packages) so it
+    # lands after url/hyperref and survives child theme preamble overrides. The
+    # LaTeX itself is rendered from the overridable url_break/default.tex_t
+    # fragment during the render stage (see _inject_url_break_guard).
+    # Guard against duplicate registration on autobuild re-runs.
+    if getattr(config, 'doxtr_url_break_guard', True):
+        if not any(fn is _inject_url_break_guard for fn, _ in _preamble_hooks):
+            register_preamble_hook(_inject_url_break_guard, position='after_packages')
 
     # --- Table style: ensure colorrows is enabled ---
     # Sphinx's colorrows machinery is the only reliable way to colour longtable
@@ -1971,6 +2017,8 @@ def _stage_build_and_render_preamble(app, config, ctx):
         template_vars['doxtr_suppress_warnings'] = getattr(config, 'doxtr_suppress_warnings', True)
         template_vars['doxtr_pagegoal_overflow_guard'] = getattr(config, 'doxtr_pagegoal_overflow_guard', True)
         template_vars['doxtr_global_overflow_guard'] = getattr(config, 'doxtr_global_overflow_guard', True)
+        template_vars['doxtr_url_break_guard'] = getattr(config, 'doxtr_url_break_guard', True)
+        template_vars['doxtr_url_break_aggressive'] = getattr(config, 'doxtr_url_break_aggressive', True)
         template_vars['doxtr_heading_needspace_guard'] = getattr(config, 'doxtr_heading_needspace_guard', True)
         template_vars['doxtr_durole_par_fix'] = getattr(config, 'doxtr_durole_par_fix', True)
         template_vars['extensions'] = getattr(config, 'extensions', [])
@@ -2698,6 +2746,23 @@ def _stage_build_and_render_preamble(app, config, ctx):
             extra_ctx={'ct_conf': ct_conf},
         )
 
+        # 10.5 URL Line-Break Guard Resolution
+        # Rendered here — not inlined in preamble.tex_t — so a child theme can
+        # fully replace it by dropping latex_styles/url_break/default.tex_t.
+        # The rendered LaTeX is stashed in the module-level
+        # _rendered_url_break_guard and injected at 'after_packages' by the
+        # _inject_url_break_guard preamble hook (registered in config_inited).
+        # When doxtr_url_break_guard is False we skip the render entirely and
+        # reset the holder so the hook emits nothing.
+        global _rendered_url_break_guard
+        if getattr(config, 'doxtr_url_break_guard', True):
+            _rendered_url_break_guard = resolve_and_render_template(
+                app, env, template_vars, 'url_break', DEFAULT_STYLE_NAME,
+                theme_style_paths, resolve_val, strict_mode, use_cache,
+            )
+        else:
+            _rendered_url_break_guard = ''
+
         # --- CUSTOM STYLE TYPE REGISTRY ---
         # Process all style types registered externally via register_style_type().
         # Built-in types (sidebar, highlights, admonitions, etc.) keep their own
@@ -3341,10 +3406,18 @@ def setup(app):
     app.add_config_value('doxtr_enable_landscape_processor', True, 'env')
     app.add_config_value('doxtr_table_auto_landscape', True, 'env')
     app.add_config_value('doxtr_landscape_min_columns', DEFAULT_MIN_COLUMNS, 'env')
+    app.add_config_value('doxtr_table_longtable_row_threshold', DEFAULT_LONGTABLE_ROW_THRESHOLD, 'env')
     app.add_config_value('doxtr_landscape_skip_table_classes', [], 'env')
     app.add_config_value('doxtr_tabulary_overflow_guard', True, 'env')
     app.add_config_value('doxtr_pagegoal_overflow_guard', True, 'env')
     app.add_config_value('doxtr_global_overflow_guard', True, 'env')
+    app.add_config_value('doxtr_url_break_guard', True, 'env')
+    app.add_config_value('doxtr_url_break_aggressive', True, 'env')
+    # Custom folder to search for the url_break/default.tex_t override (tier-1
+    # of template resolution). The resolution engine derives this key from the
+    # style_dir as f'doxtr_{style_dir}_path' -> 'doxtr_url_break_path', so it
+    # gives url_break parity with the other style types' custom-path folder.
+    app.add_config_value('doxtr_url_break_path', '', 'env')
     app.add_config_value('doxtr_heading_needspace_guard', True, 'env')
     app.add_config_value('doxtr_durole_par_fix', True, 'env')
 

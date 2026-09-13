@@ -876,6 +876,8 @@ Each section can be set via `doxtr_theme_defaults` (in a theme) or directly in `
 | `doxtr_landscape_package` | `'pdflscape'` | Package for landscape pages: `'pdflscape'`, `'lscape'`, or `''` to disable |
 | `doxtr_strict_mode` | `False` | Raise an error on missing templates instead of falling back |
 | `doxtr_cache_templates` | `True` | Cache compiled Jinja2 templates across pages |
+| `doxtr_url_break_guard` | `True` | Make Sphinx `\url`/`\sphinxurl`/`\sphinxhref` links break-friendly (adds `\Urlmuskip` stretch and structural break points) to prevent overfull-hbox margin overflow on long query-string URLs. Fully overridable via `latex_styles/url_break/default.tex_t`. Set `False` if a child theme handles URL breaking differently |
+| `doxtr_url_break_aggressive` | `True` | When the guard is on, also allow breaks between plain letters/digits so unbroken alphanumeric tokens (base64 blobs, percent-encoded params, long IDs) can wrap. Set `False` for a conservative structural-only break set |
 | `doxtr_adapt_colors_to_page` | `'auto'` | Page color adaptation: `'auto'` (adapt when page differs by >0.05 luminance), `True` (force), `False` (disable) |
 | `doxtr_adapt_image_backgrounds` | `True` | Replace white image backgrounds with page color when adaptation is active |
 | `doxtr_adapt_image_white_fuzz` | `5` | Channel tolerance (0–255) for white detection in image background adaptation |
@@ -1656,7 +1658,7 @@ If you set `InnerLinkColor` or `OuterLinkColor` directly in `latex_elements['sph
 ---
 
 ```bash
-export VERSION=v1.1.9 && git tag $VERSION && git push origin $VERSION
+export VERSION=v1.1.10 && git tag $VERSION && git push origin $VERSION
 ```
 
 GitHub Actions will publish to PyPI automatically on release.

@@ -1,0 +1,74 @@
+%% ----------------------------------------------------
+%% URL LINE-BREAK GUARD (doxtr-pdf-theme-core)
+%% Sphinx renders inline links via \sphinxurl / \sphinxhref, which route
+%% the visible URL through the LaTeX \url machinery (url package, loaded
+%% by hyperref).  By default \url only breaks after a handful of
+%% characters, so query-string-heavy links (UUIDs, percent-encoded
+%% parameters, tokens with no hyphens or spaces) are set as a single long
+%% box that runs into or past the right margin as an overfull hbox.
+%%
+%% This guard makes \url break-friendly:
+%%   * \Urlmuskip adds a little inter-character stretch so the breaker has
+%%     slack to work with (avoids ragged overfulls even mid-token).
+%%   * \UrlBreaks is extended with a configurable break-after character
+%%     set.  When doxtr_url_break_aggressive is True (default) the set
+%%     includes every ASCII letter and digit, so even an unbroken
+%%     alphanumeric token (e.g. a base64 blob) can wrap.  When False, only
+%%     structural URL characters (./:?&=#-_%~ etc.) are added, preserving
+%%     more "word-like" URL segments at the cost of occasional overflow.
+%%
+%% Configuration:
+%%   * Theme authors: doxtr_url_break_guard = False disables the block;
+%%     doxtr_url_break_aggressive = False uses the conservative break set.
+%%   * Theme designers: redefine \doxtrurlmuskip (the inter-character
+%%     stretch) anywhere in the preamble — the register is (re)assigned at
+%%     \begin{document} via \AtBeginDocument, so a later
+%%     \providecommand/\def wins. Append further break points with
+%%       register_preamble_hook(
+%%         lambda: r'\makeatletter\g@addto@macro\UrlBreaks{\do\X}\makeatother',
+%%         position='after_packages')
+%%     (the \makeatletter...\makeatother wrapping is required because
+%%     \UrlBreaks is an @-catcode macro).
+%%     To replace this block entirely, drop your own
+%%     latex_styles/url_break/default.tex_t in your theme/project — it is
+%%     resolved through the same hierarchical engine as every other style
+%%     type (custom path -> user project -> theme paths -> this core file
+%%     -> absolute fallback).
+%% Disable via doxtr_url_break_guard = False in conf.py.
+%% ----------------------------------------------------
+\makeatletter
+\@ifpackageloaded{url}{}{\usepackage{url}}
+%% Inter-character stretch inside \url.  \Urlmuskip is a math-glue
+%% (\muskip) register, so it is assigned directly with mu units (not via
+%% \setlength, which expects pt-based lengths).  Redefine \doxtrurlmuskip
+%% in a child theme / preamble hook to tune (default: 0mu plus 1mu).
+\providecommand{\doxtrurlmuskip}{0mu plus 1mu}
+%% Defer the register assignment to \begin{document} so a theme that
+%% redefines \doxtrurlmuskip later in the preamble (e.g. via a
+%% register_preamble_hook at 'after_packages') is honoured — a direct
+%% assignment here would freeze the register at the default value.
+\AtBeginDocument{\Urlmuskip=\doxtrurlmuskip\relax}
+%% Always allow breaks at the structural URL characters.
+\g@addto@macro\UrlBreaks{\UrlOrds}
+\g@addto@macro\UrlBreaks{%
+  \do\.\do\@\do\\\do\/\do\!\do\_\do\|\do\;\do\>\do\]%
+  \do\)\do\,\do\?\do\'\do\+\do\=\do\#\do\~\do\%\do\&\do\-%
+  \do\:\do\<\do\[\do\(\do\{\do\}\do\*\do\$%
+}
+<% if doxtr_url_break_aggressive %>
+%% Aggressive mode: also permit breaks between plain letters and digits so
+%% that unbroken alphanumeric tokens (percent-encoded blobs, base64, long
+%% identifiers) never overflow the margin. The digit run (\do\0..\do\9)
+%% overlaps with \UrlOrds (added above), but \UrlBreaks entries are
+%% idempotent, so it is repeated here to keep this block a self-contained
+%% "all alphanumerics" set.
+\g@addto@macro\UrlBreaks{%
+  \do\a\do\b\do\c\do\d\do\e\do\f\do\g\do\h\do\i\do\j\do\k\do\l%
+  \do\m\do\n\do\o\do\p\do\q\do\r\do\s\do\t\do\u\do\v\do\w\do\x%
+  \do\y\do\z\do\A\do\B\do\C\do\D\do\E\do\F\do\G\do\H\do\I\do\J%
+  \do\K\do\L\do\M\do\N\do\O\do\P\do\Q\do\R\do\S\do\T\do\U\do\V%
+  \do\W\do\X\do\Y\do\Z\do\0\do\1\do\2\do\3\do\4\do\5\do\6\do\7%
+  \do\8\do\9%
+}
+<% endif %>
+\makeatother

@@ -21,7 +21,8 @@ from .core_fallbacks import (
     DEFAULT_TITLE_STYLES, DEFAULT_ADMONITION_STYLE, DEFAULT_NEED_STYLE,
     DEFAULT_CONTAINER_STYLE, DEFAULT_TABLE_STYLE, DEFAULT_FIGURE_STYLE,
     DEFAULT_CODE_STYLE, DEFAULT_SIDEBAR_STYLE, DEFAULT_HIGHLIGHTS_STYLE,
-    DEFAULT_TOPIC_STYLE, DEFAULT_CONTENTS_STYLE, DEFAULT_TODO_STYLE
+    DEFAULT_TOPIC_STYLE, DEFAULT_CONTENTS_STYLE, DEFAULT_TODO_STYLE,
+    DEFAULT_URL_BREAK_STYLE
 )
 
 __all__ = [
@@ -65,6 +66,10 @@ STYLE_TYPES: Dict[str, str] = {
     'contents': 'contents',
     'todo': 'todo',
     'draft': 'draft',
+    # Preamble-level guards that are ALSO fully overridable .tex_t fragments.
+    # url_break renders the URL line-break guard; a child theme can drop its
+    # own latex_styles/url_break/default.tex_t to replace it entirely.
+    'url_break': 'url_break',
 }
 
 # Mapping from style type to the corresponding absolute fallback constant.
@@ -84,6 +89,7 @@ STYLE_FALLBACKS: Dict[str, Callable[[str], str]] = {
     'contents': lambda _: DEFAULT_CONTENTS_STYLE,
     'todo': lambda _: DEFAULT_TODO_STYLE,
     'draft': lambda _: '',          # empty string = no rendering if template missing
+    'url_break': lambda _: DEFAULT_URL_BREAK_STYLE,
 }
 
 # --- TEMPLATE CACHE ---

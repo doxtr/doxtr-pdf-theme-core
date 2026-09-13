@@ -25,14 +25,14 @@ jobs:
       - uses: actions/checkout@v6
       
       - name: Pull container image
-        run: docker pull doxtr/reactor:0.1.1
+        run: docker pull doxtr/reactor:0.1.2
 
       - name: Run test harness
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspaces/docs \
             -w /workspaces/docs \
-            doxtr/reactor:0.1.1 \
+            doxtr/reactor:0.1.2 \
             bash -c '
               pip install -e /workspaces/docs &&
               cd test_harness &&
@@ -44,7 +44,7 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspaces/docs \
             -w /workspaces/docs \
-            doxtr/reactor:0.1.1 \
+            doxtr/reactor:0.1.2 \
             bash -c '
               pip install -e /workspaces/docs &&
               pip install pytest &&
@@ -78,14 +78,14 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Pull container image
-        run: docker pull doxtr/reactor:0.1.1
+        run: docker pull doxtr/reactor:0.1.2
       
       - name: Run doc8 on RST files
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspaces/docs \
             -w /workspaces/docs/test_harness \
-            doxtr/reactor:0.1.1 \
+            doxtr/reactor:0.1.2 \
             bash -c 'for f in source/_test_cases/*.rst; do
                 echo "Checking $f..."
                 doc8 --config .doc8.ini "$f" || exit 1

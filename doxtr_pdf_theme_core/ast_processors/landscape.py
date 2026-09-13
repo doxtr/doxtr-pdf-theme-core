@@ -20,6 +20,7 @@ __all__ = [
     'FORCE_LANDSCAPE_CLASS',
     'NEEDS_TABLE_CLASSES',
     'DEFAULT_MIN_COLUMNS',
+    'DEFAULT_LONGTABLE_ROW_THRESHOLD',
 ]
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,14 @@ NEEDS_TABLE_CLASSES = ('need', 'need_node')
 #: environment (see preamble.tex_t) which selects an appropriate
 #: A-series page size based on column count * minimum column width.
 DEFAULT_MIN_COLUMNS = 4
+
+#: Default minimum row count (header + body) at which a portrait table is
+#: promoted to ``longtable`` so it can break across pages.  A bare Sphinx
+#: ``tabular`` is unbreakable; a portrait table with more rows than this
+#: would overflow the footer.  Tuned to catch multi-page reference tables
+#: while leaving small tables as plain tabular.  Configurable via
+#: ``doxtr_table_longtable_row_threshold`` (0 disables promotion).
+DEFAULT_LONGTABLE_ROW_THRESHOLD = 12
 
 #: Module-level storage for the registered landscape wrapper function.
 #: None means use the built-in \begin{landscape}/\end{landscape} logic.
@@ -128,6 +137,18 @@ def _get_table_column_count(table_node):
     return 0
 
 
+def _get_table_row_count(table_node):
+    """Return the total number of ``nodes.row`` in a table (header + body).
+
+    Used as a cheap proxy for table height: a table with many rows is
+    likely to exceed a single page and therefore must be a breakable
+    ``longtable`` rather than an unbreakable ``tabular`` (which would
+    overflow into the footer / off the page).  Returns 0 if the structure
+    cannot be determined.
+    """
+    return len(list(table_node.findall(nodes.row)))
+
+
 def process_landscape_ast(app, doctree, docname):
     """Wrap doxtr-landscape containers and auto-landscape wide tables.
 
@@ -156,8 +177,13 @@ def process_landscape_ast(app, doctree, docname):
         clipped if it exceeds ``\\textheight``.  The ``longtable``
         environment breaks naturally across pages.
 
-        Tables below the threshold keep the ``doxtrautolandscape`` wrapper
-        for non-Sphinx content that may benefit from width-based detection.
+        Tables below the threshold are left untouched.  They render as
+        normal breakable ``tabular``/``longtable`` environments.  They are
+        NOT wrapped in ``doxtrautolandscape`` because Sphinx tables always
+        fill ``\linewidth`` (relative ``\X{a}{b}`` widths), so the
+        environment's width-based rotation check can never fire for them,
+        and its unbreakable-savebox portrait fallback would cause a table
+        taller than ``\textheight`` to overflow into the footer.
 
     Skipped entirely for non-latex builders.
     """
@@ -206,7 +232,7 @@ def process_landscape_ast(app, doctree, docname):
         # need box from breaking across pages.
         # Child themes that use different needs plugins can extend this list
         # via the doxtr_landscape_skip_table_classes config value.
-        extra_skip = tuple(getattr(app.config, 'doxtr_landscape_skip_table_classes', []))
+        extra_skip = tuple(getattr(app.config, 'doxtr_landscape_skip_table_classes', []) or [])
         skip_classes = NEEDS_TABLE_CLASSES + extra_skip
         if any(c in node.get('classes', []) for c in skip_classes):
             continue
@@ -259,9 +285,41 @@ def process_landscape_ast(app, doctree, docname):
                 '', '\n\\end{doxtradaptivelandscape}\n', format='latex',
             )
         else:
-            # Narrow tables: use auto-measurement (works for non-Sphinx content)
-            pre = nodes.raw('', '\n\\begin{doxtrautolandscape}\n', format='latex')
-            post = nodes.raw('', '\n\\end{doxtrautolandscape}\n', format='latex')
+            # Narrow tables (below the column threshold): keep portrait.
+            #
+            # These are NOT wrapped in doxtrautolandscape.  Sphinx renders
+            # every nodes.table with relative \X{a}{b} column widths that
+            # always fill exactly \linewidth, so the width-based rotation
+            # check inside doxtrautolandscape can never fire for them --
+            # they always stay portrait.  Worse, doxtrautolandscape's
+            # portrait fallback typesets the table into an unbreakable
+            # savebox/minipage; a table taller than \textheight then cannot
+            # break across pages and overflows into the footer (and off the
+            # bottom of the page).
+            #
+            # However, a bare Sphinx ``tabular`` is ALSO unbreakable: a
+            # portrait table with many rows exceeds a single page and
+            # overflows the footer just the same.  To fix this, promote
+            # tall portrait tables to ``longtable`` (via the CSS class that
+            # Sphinx's LaTeX writer honours) so they paginate naturally.
+            # The row count is a cheap height proxy; the threshold is
+            # configurable via ``doxtr_table_longtable_row_threshold``
+            # (default DEFAULT_LONGTABLE_ROW_THRESHOLD).  Set to 0 to
+            # disable promotion entirely.
+            row_threshold = getattr(
+                app.config, 'doxtr_table_longtable_row_threshold', None,
+            )
+            if row_threshold is None:
+                row_threshold = DEFAULT_LONGTABLE_ROW_THRESHOLD
+            if (row_threshold and
+                    _get_table_row_count(node) >= row_threshold and
+                    'longtable' not in node.get('classes', [])):
+                node['classes'].append('longtable')
+            # Nothing else to wrap; let Sphinx emit the (now breakable)
+            # table.  doxtrautolandscape remains available for genuinely
+            # wide NON-Sphinx content via the forced-landscape container
+            # path (Phase 1) and the register_landscape_wrapper API.
+            continue
 
         parent.insert(idx, pre)
         # node is now at idx+1, insert post after it
